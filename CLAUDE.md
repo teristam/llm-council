@@ -23,16 +23,32 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - Graceful degradation: returns None on failure, continues with successful responses
 
 **`council.py`** - The Core Logic
+- `build_conversation_context()`: Converts stored messages to OpenAI-compatible format for LLM context
+  - Extracts `stage3["response"]` (chairman synthesis) as assistant content
+  - Returns list of `{"role": "user/assistant", "content": "text"}` dicts
+- `format_history_for_display()`: Formats conversation history for inclusion in prompts
+  - Truncates messages longer than 500 chars to keep prompts manageable
+  - Returns formatted string with "User:" and "Assistant:" labels
 - `stage1_collect_responses()`: Parallel queries to all council models
+  - NOW ACCEPTS `conversation_history` parameter (OpenAI message format)
+  - Passes full conversation context to models for follow-up awareness
 - `stage2_collect_rankings()`:
+  - NOW ACCEPTS `conversation_history` parameter
   - Anonymizes responses as "Response A, B, C, etc."
   - Creates `label_to_model` mapping for de-anonymization
   - Prompts models to evaluate and rank (with strict format requirements)
+  - Includes conversation history in ranking prompt when available
   - Returns tuple: (rankings_list, label_to_model_dict)
   - Each ranking includes both raw text and `parsed_ranking` list
 - `stage3_synthesize_final()`: Chairman synthesizes from all responses + rankings
+  - NOW ACCEPTS `conversation_history` parameter
+  - Includes conversation context in chairman prompt when available
+  - Prompts chairman to maintain consistency with previous council responses
 - `parse_ranking_from_text()`: Extracts "FINAL RANKING:" section, handles both numbered lists and plain format
 - `calculate_aggregate_rankings()`: Computes average rank position across all peer evaluations
+- `run_full_council()`: Main orchestrator
+  - NOW ACCEPTS `conversation_history` parameter
+  - Passes history through all three stages
 
 **`storage.py`**
 - JSON-based conversation storage in `data/conversations/`
@@ -125,6 +141,45 @@ All ReactMarkdown components must be wrapped in `<div className="markdown-conten
 ### Model Configuration
 Models are hardcoded in `backend/config.py`. Chairman can be same or different from council members. The current default is Gemini as chairman per user preference.
 
+## Follow-Up Question Support
+
+The system now supports multi-turn conversations with full context awareness. When a user asks a follow-up question, the entire conversation history is passed to all three stages of the council process.
+
+### How It Works
+
+1. **Context Building**: Before processing a new message, `build_conversation_context()` converts stored messages into OpenAI-compatible format
+   - User messages: passed through unchanged (`{role: "user", content: "..."}`)
+   - Assistant messages: extracts chairman's synthesis from `stage3["response"]` as content
+   - Incomplete messages (missing stage3) are skipped automatically
+
+2. **History Passing**: The conversation history is passed through all stages:
+   - **Stage 1 (Council Responses)**: Models receive message history array and can reference previous Q&A
+   - **Stage 2 (Rankings)**: Rankers see conversation context and evaluate whether responses appropriately reference it
+   - **Stage 3 (Chairman)**: Chairman sees history and is instructed to maintain consistency with previous council positions
+
+3. **Prompt Adaptation**: Prompts automatically adjust based on whether conversation history exists:
+   - Stage 2: Adds "considering whether it appropriately references the conversation history" to evaluation criteria
+   - Stage 3: Adds context-specific instructions like "ensure your answer builds upon prior answers when relevant"
+
+4. **Backward Compatibility**: The feature is fully backward compatible:
+   - Existing conversations work without modification
+   - First messages in new conversations have empty history (default parameter)
+   - No storage schema changes required
+
+### Technical Details
+
+- **On-the-fly transformation**: Stored 3-stage messages are converted to simple role/content format when building context
+- **Token management**: Long messages (>500 chars) are truncated in prompt display to manage token usage
+- **Anonymization preserved**: Conversation history shows generic "Assistant:" role, Stage 2 rankings still use anonymized labels
+- **No frontend changes**: UI automatically supports follow-ups through existing chat interface
+
+### Trade-offs
+
+- **Token Usage**: Increases linearly with conversation length (full history sent to all models)
+- **Latency**: Slightly slower responses for longer conversations (more tokens to process)
+- **Cost**: Higher API costs for multi-turn conversations
+- **Future mitigation**: Can add `max_turns` parameter to limit history length (e.g., last 10 turns only)
+
 ## Common Gotchas
 
 1. **Module Import Errors**: Always run backend as `python -m backend.main` from project root, not from backend directory
@@ -150,17 +205,23 @@ Use `test_openrouter.py` to verify API connectivity and test different model ide
 ```
 User Query
     ↓
-Stage 1: Parallel queries → [individual responses]
+Load Conversation from Storage
     ↓
-Stage 2: Anonymize → Parallel ranking queries → [evaluations + parsed rankings]
+Build Conversation Context (extract stage3 responses as assistant content)
+    ↓
+Stage 1: Parallel queries WITH HISTORY → [individual responses]
+    ↓
+Stage 2: Anonymize → Parallel ranking queries WITH HISTORY → [evaluations + parsed rankings]
     ↓
 Aggregate Rankings Calculation → [sorted by avg position]
     ↓
-Stage 3: Chairman synthesis with full context
+Stage 3: Chairman synthesis WITH HISTORY and full stage 1+2 context
     ↓
 Return: {stage1, stage2, stage3, metadata}
+    ↓
+Save Assistant Message to Storage (full 3-stage structure)
     ↓
 Frontend: Display with tabs + validation UI
 ```
 
-The entire flow is async/parallel where possible to minimize latency.
+The entire flow is async/parallel where possible to minimize latency. Conversation history is built once at the start and passed through all stages, enabling follow-up question awareness.
