@@ -166,6 +166,11 @@ function App() {
             setIsLoading(false);
             break;
 
+          case 'stream_end':
+            // Safety net: stream ended, ensure loading is cleared
+            setIsLoading(false);
+            break;
+
           default:
             console.log('Unknown event type:', eventType);
         }
