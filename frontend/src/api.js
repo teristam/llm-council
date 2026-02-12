@@ -93,44 +93,50 @@ export const api = {
     const decoder = new TextDecoder();
     let buffer = ''; // Buffer for incomplete lines across chunks
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // Append new chunk to buffer
-      buffer += decoder.decode(value, { stream: true });
+        // Append new chunk to buffer
+        buffer += decoder.decode(value, { stream: true });
 
-      // Process complete lines (SSE events end with \n\n)
-      const lines = buffer.split('\n');
+        // Process complete lines (SSE events end with \n\n)
+        const lines = buffer.split('\n');
 
-      // Keep the last potentially incomplete line in the buffer
-      buffer = lines.pop() || '';
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          try {
-            const event = JSON.parse(data);
-            onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e, data);
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const event = JSON.parse(data);
+              onEvent(event.type, event);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e, data);
+            }
           }
         }
       }
-    }
 
-    // Process any remaining data in buffer
-    if (buffer.startsWith('data: ')) {
-      const data = buffer.slice(6);
-      try {
-        const event = JSON.parse(data);
-        onEvent(event.type, event);
-      } catch (e) {
-        console.error('Failed to parse final SSE event:', e, data);
+      // Process any remaining data in buffer
+      if (buffer.startsWith('data: ')) {
+        const data = buffer.slice(6);
+        try {
+          const event = JSON.parse(data);
+          onEvent(event.type, event);
+        } catch (e) {
+          console.error('Failed to parse final SSE event:', e, data);
+        }
       }
+    } catch (streamError) {
+      console.error('Stream reading error:', streamError);
+      // Notify the caller that an error occurred during streaming
+      onEvent('error', { message: `Stream interrupted: ${streamError.message}` });
+    } finally {
+      // Always signal stream end, whether successful or not
+      onEvent('stream_end', {});
     }
-
-    // Safety net: if stream ends without a complete event, signal completion
-    onEvent('stream_end', {});
   },
 };

@@ -1,0 +1,183 @@
+Starting LLM Council...
+
+Starting backend on http://localhost:8001...
+INFO:     Started server process [898693]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+Starting frontend on http://localhost:5173...
+
+✓ LLM Council is running!
+  Backend:  http://localhost:8001
+  Frontend: http://localhost:5173
+
+Press Ctrl+C to stop both servers
+
+> frontend@0.0.0 dev
+> vite
+
+
+  VITE v7.2.4  ready in 69 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+INFO:     127.0.0.1:59124 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59128 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59124 - "OPTIONS /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59128 - "POST /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59124 - "GET /api/conversations/9760a09c-9e68-4a26-823b-5d44bf4b6e8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59128 - "POST /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59124 - "GET /api/conversations/ecf90862-4c7c-4909-af4f-9b0b6bd03f65 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [898693]
+3:43:36 PM [vite] vite.config.js changed, restarting server...
+3:43:36 PM [vite] server restarted.
+Starting LLM Council...
+
+Starting backend on http://localhost:8001...
+INFO:     Started server process [903423]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+Starting frontend on http://localhost:5173...
+
+✓ LLM Council is running!
+  Backend:  http://localhost:8001
+  Frontend: http://localhost:5173
+
+Press Ctrl+C to stop both servers
+
+> frontend@0.0.0 dev
+> vite
+
+Port 5173 is in use, trying another one...
+
+  VITE v7.2.4  ready in 68 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: use --host to expose
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations/36ae6ac9-423e-4601-89c9-4997cb404f68 HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.183:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.189:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "POST /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587 HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "POST /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587/message/stream HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587 HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "POST /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587/message/stream HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587 HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "POST /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587/message/stream HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     188.214.106.180:0 - "GET /api/conversations/11469e72-5014-4dea-9fe9-42fcccc6f587 HTTP/1.1" 200 OK
+INFO:     219.78.83.44:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     219.78.83.44:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37570 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37582 - "GET /api/conversations HTTP/1.1" 200 OK
+3:37:35 PM [vite] (client) hmr update /src/App.jsx
+3:37:35 PM [vite] (client) hmr update /src/App.jsx
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+Error querying model x-ai/grok-4: 'choices'
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "POST /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884/message/stream HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     2.58.241.68:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+5:01:59 PM [vite] vite.config.js changed, restarting server...
+5:01:59 PM [vite] server restarted.
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+5:02:13 PM [vite] (client) hmr update /src/App.jsx
+5:02:49 PM [vite] (client) hmr update /src/App.jsx
+INFO:     220.246.217.223:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations HTTP/1.1" 200 OK
+INFO:     220.246.217.223:0 - "GET /api/conversations/482eec82-f4ec-4a77-a4ae-08832d399884 HTTP/1.1" 200 OK

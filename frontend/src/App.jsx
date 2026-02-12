@@ -171,6 +171,10 @@ function App() {
             setIsLoading(false);
             break;
 
+          case 'keepalive':
+            // Keepalive heartbeat from server - ignore silently
+            break;
+
           default:
             console.log('Unknown event type:', eventType);
         }

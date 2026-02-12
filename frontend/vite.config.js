@@ -12,7 +12,14 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8001',
         changeOrigin: true,
+        // Long timeout for streaming SSE connections (10 minutes)
+        timeout: 600000,
+        proxyTimeout: 600000,
       }
+    },
+    // Prevent HMR from causing full page reloads during long operations
+    hmr: {
+      overlay: false,
     }
   }
 })

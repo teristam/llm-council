@@ -153,6 +153,19 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     conversation_history = build_conversation_context(conversation["messages"])
 
     async def event_generator():
+        # Helper to run a long task while sending periodic keepalives
+        async def with_keepalive(coro):
+            """Run a coroutine while yielding keepalive events every 15 seconds."""
+            task = asyncio.create_task(coro)
+            while not task.done():
+                try:
+                    # Wait for task completion or timeout
+                    await asyncio.wait_for(asyncio.shield(task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    # Task still running, yield keepalive
+                    pass
+            return task.result()
+
         try:
             # Add user message
             storage.add_user_message(conversation_id, request.content)
@@ -164,27 +177,51 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 1: Collect responses WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content, conversation_history)
+
+            # Run stage 1 with keepalive heartbeats
+            stage1_task = asyncio.create_task(stage1_collect_responses(request.content, conversation_history))
+            while not stage1_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage1_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage1_results = stage1_task.result()
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
             # Stage 2: Collect rankings WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(
+
+            # Run stage 2 with keepalive heartbeats
+            stage2_task = asyncio.create_task(stage2_collect_rankings(
                 request.content,
                 stage1_results,
                 conversation_history
-            )
+            ))
+            while not stage2_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage2_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage2_results, label_to_model = stage2_task.result()
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
             # Stage 3: Synthesize final answer WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(
+
+            # Run stage 3 with keepalive heartbeats
+            stage3_task = asyncio.create_task(stage3_synthesize_final(
                 request.content,
                 stage1_results,
                 stage2_results,
                 conversation_history
-            )
+            ))
+            while not stage3_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage3_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage3_result = stage3_task.result()
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
 
             # Wait for title generation if it was started
@@ -212,12 +249,19 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx/proxy buffering
+            "Transfer-Encoding": "chunked",
         }
     )
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8001,
+        timeout_keep_alive=600,  # 10 min keepalive for long SSE connections
+    )
