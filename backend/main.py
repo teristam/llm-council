@@ -2,12 +2,15 @@
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Dict, Any
+from pathlib import Path
 import uuid
 import json
 import asyncio
+import os
 
 from . import storage
 from .council import (
@@ -255,6 +258,26 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             "Transfer-Encoding": "chunked",
         }
     )
+
+
+# Serve static frontend files in production mode
+# Check if frontend/dist exists (production build)
+FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    # Serve static assets
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        """Serve the SPA for any non-API route."""
+        # Try to serve the exact file first
+        file_path = FRONTEND_DIST / path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(FRONTEND_DIST / "index.html")
 
 
 if __name__ == "__main__":

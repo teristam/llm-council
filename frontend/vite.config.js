@@ -17,9 +17,8 @@ export default defineConfig({
         proxyTimeout: 600000,
       }
     },
-    // Prevent HMR from causing full page reloads during long operations
-    hmr: {
-      overlay: false,
-    }
+    // Disable HMR completely - it doesn't work well over reverse proxies
+    // and causes full page reloads when websocket connection fails
+    hmr: false,
   }
 })
