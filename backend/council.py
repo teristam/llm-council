@@ -189,6 +189,8 @@ async def stage3_synthesize_final(
         stage1_results: Individual model responses from Stage 1
         stage2_results: Rankings from Stage 2
         conversation_history: Previous messages in OpenAI format (optional)
+        devil_advocate_result: Devil's advocate challenge result (optional).
+            If provided, chairman prompt includes a section requiring direct response.
 
     Returns:
         Dict with 'model' and 'response' keys
