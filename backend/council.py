@@ -506,23 +506,22 @@ Title:"""
 async def run_full_council(
     user_query: str,
     conversation_history: List[Dict[str, str]] = []
-) -> Tuple[List, List, Dict, Dict]:
+) -> Tuple[List, List, Dict, Dict, Dict]:
     """
-    Run the complete 3-stage council process with optional conversation history.
+    Run the complete council process.
 
     Args:
         user_query: The user's question
         conversation_history: Previous messages in OpenAI format (optional)
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata)
     """
     # Stage 1: Collect individual responses WITH HISTORY
     stage1_results = await stage1_collect_responses(user_query, conversation_history)
 
-    # If no models responded successfully, return error
     if not stage1_results:
-        return [], [], {
+        return [], [], None, {
             "model": "error",
             "response": "All models failed to respond. Please try again."
         }, {}
@@ -537,18 +536,27 @@ async def run_full_council(
     # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
-    # Stage 3: Synthesize final answer WITH HISTORY
+    # Stage 2.5: Devil's Advocate — identify consensus and argue against it
+    devil_advocate_result = await stage2_5_devil_advocate(
+        user_query,
+        stage1_results,
+        stage2_results,
+        label_to_model,
+        conversation_history
+    )
+
+    # Stage 3: Synthesize final answer WITH HISTORY and DA challenge
     stage3_result = await stage3_synthesize_final(
         user_query,
         stage1_results,
         stage2_results,
-        conversation_history
+        conversation_history,
+        devil_advocate_result
     )
 
-    # Prepare metadata
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    return stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata
