@@ -255,8 +255,8 @@ Provide a clear, well-reasoned final answer {final_answer_instruction}:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
-    # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    # Query the chairman model with medium reasoning effort
+    response = await query_model(CHAIRMAN_MODEL, messages, reasoning={"effort": "medium"})
 
     if response is None:
         # Fallback if chairman fails
