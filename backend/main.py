@@ -219,7 +219,6 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 request.content,
                 stage1_results,
                 stage2_results,
-                label_to_model,
                 conversation_history
             ))
             while not stage2_5_task.done():

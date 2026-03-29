@@ -1,6 +1,6 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, DEVIL_ADVOCATE_MODEL
 
@@ -315,12 +315,13 @@ def parse_devil_advocate_response(raw: str) -> Dict[str, Any]:
     Returns:
         Dict with consensus_identified, critique, and raw keys
     """
-    if "CONSENSUS:" in raw and "CRITIQUE:" in raw:
-        consensus_start = raw.index("CONSENSUS:") + len("CONSENSUS:")
-        critique_start = raw.index("CRITIQUE:")
-        critique_content_start = critique_start + len("CRITIQUE:")
+    consensus_pos = raw.find("CONSENSUS:")
+    critique_pos = raw.find("CRITIQUE:")
+    if consensus_pos != -1 and critique_pos != -1 and consensus_pos < critique_pos:
+        consensus_start = consensus_pos + len("CONSENSUS:")
+        critique_content_start = critique_pos + len("CRITIQUE:")
 
-        consensus_text = raw[consensus_start:critique_start].strip()
+        consensus_text = raw[consensus_start:critique_pos].strip()
         critique_text = raw[critique_content_start:].strip()
 
         return {
@@ -341,9 +342,8 @@ async def stage2_5_devil_advocate(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
-    label_to_model: Dict[str, str],
     conversation_history: List[Dict[str, str]] = []
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Stage 2.5: Devil's Advocate identifies council consensus and argues against it.
 
@@ -351,7 +351,6 @@ async def stage2_5_devil_advocate(
         user_query: The original user query
         stage1_results: Individual model responses from Stage 1
         stage2_results: Rankings from Stage 2
-        label_to_model: Mapping from anonymous labels to model names
         conversation_history: Previous messages in OpenAI format (optional)
 
     Returns:
@@ -506,7 +505,7 @@ Title:"""
 async def run_full_council(
     user_query: str,
     conversation_history: List[Dict[str, str]] = []
-) -> Tuple[List, List, Dict, Dict, Dict]:
+) -> Tuple[List, List, Optional[Dict], Dict, Dict]:
     """
     Run the complete council process.
 
@@ -541,7 +540,6 @@ async def run_full_council(
         user_query,
         stage1_results,
         stage2_results,
-        label_to_model,
         conversation_history
     )
 
