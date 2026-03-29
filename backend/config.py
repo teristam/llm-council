@@ -19,6 +19,9 @@ COUNCIL_MODELS = [
 # Chairman model - synthesizes final response
 CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 
+# Devil's Advocate model - identifies consensus and argues against it
+DEVIL_ADVOCATE_MODEL = "google/gemini-3.1-pro-preview"
+
 # OpenRouter API endpoint
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
