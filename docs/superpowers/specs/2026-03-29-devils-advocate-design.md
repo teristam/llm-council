@@ -122,7 +122,34 @@ Render `<Stage2_5 />` between `<Stage2 />` and `<Stage3 />`, conditionally (only
 
 ## Storage
 
-The DA result is **not** persisted to the JSON storage — consistent with how `metadata` (label_to_model, aggregate_rankings) is currently handled. It is ephemeral: available in the API response and SSE stream, stored in frontend UI state only.
+The DA result **is persisted** to JSON storage, alongside stage1/stage2/stage3, consistent with how other council member responses are stored.
+
+`storage.add_assistant_message()` gains a `stage2_5` parameter:
+
+```python
+def add_assistant_message(
+    conversation_id: str,
+    stage1: List[Dict[str, Any]],
+    stage2: List[Dict[str, Any]],
+    stage2_5: Dict[str, Any],   # ← new
+    stage3: Dict[str, Any]
+):
+```
+
+Stored assistant message shape:
+```json
+{
+  "role": "assistant",
+  "stage1": [...],
+  "stage2": [...],
+  "stage2_5": { "model": "...", "consensus_identified": "...", "critique": "...", "raw": "..." },
+  "stage3": { "model": "...", "response": "..." }
+}
+```
+
+When loading a past conversation, `ChatInterface` reads `stage2_5` from the message and renders `<Stage2_5 />` if present. Existing stored conversations without `stage2_5` are unaffected (the component renders nothing when the field is absent).
+
+Note: `metadata` (label_to_model, aggregate_rankings) remains ephemeral, as before.
 
 ## Trade-offs
 
