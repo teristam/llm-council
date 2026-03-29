@@ -178,7 +178,8 @@ async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
-    conversation_history: List[Dict[str, str]] = []
+    conversation_history: List[Dict[str, str]] = [],
+    devil_advocate_result: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
@@ -221,6 +222,18 @@ Current Question: {user_query}"""
         question_type = "original question"
         final_answer_instruction = "that represents the council's collective wisdom"
 
+    # Build devil's advocate section if available
+    da_section = ""
+    if devil_advocate_result:
+        da_section = f"""
+DEVIL'S ADVOCATE CHALLENGE:
+Consensus identified: {devil_advocate_result.get('consensus_identified', '')}
+Challenge: {devil_advocate_result.get('critique', '')}
+
+You MUST directly address this challenge in your final answer — either rebut it with evidence,
+concede the point, or explain why it doesn't change your conclusion.
+"""
+
     chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 {question_section}
@@ -230,7 +243,7 @@ STAGE 1 - Individual Responses:
 
 STAGE 2 - Peer Rankings:
 {stage2_text}
-
+{da_section}
 Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's {question_type}. Consider:
 - The individual responses and their insights
 - The peer rankings and what they reveal about response quality
