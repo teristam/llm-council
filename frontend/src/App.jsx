@@ -74,11 +74,13 @@ function App() {
         role: 'assistant',
         stage1: null,
         stage2: null,
+        stage2_5: null,
         stage3: null,
         metadata: null,
         loading: {
           stage1: false,
           stage2: false,
+          stage2_5: false,
           stage3: false,
         },
       };
@@ -127,6 +129,25 @@ function App() {
               lastMsg.stage2 = event.data;
               lastMsg.metadata = event.metadata;
               lastMsg.loading.stage2 = false;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_5_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.loading.stage2_5 = true;
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_5_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = messages[messages.length - 1];
+              lastMsg.stage2_5 = event.data;
+              lastMsg.loading.stage2_5 = false;
               return { ...prev, messages };
             });
             break;
