@@ -18,6 +18,7 @@ from .council import (
     generate_conversation_title,
     stage1_collect_responses,
     stage2_collect_rankings,
+    stage2_5_devil_advocate,
     stage3_synthesize_final,
     calculate_aggregate_rankings,
     build_conversation_context
@@ -116,7 +117,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     conversation_history = build_conversation_context(conversation["messages"])
 
     # Run the 3-stage council process WITH HISTORY
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+    stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata = await run_full_council(
         request.content,
         conversation_history
     )
@@ -126,6 +127,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
+        devil_advocate_result,
         stage3_result
     )
 
@@ -133,6 +135,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     return {
         "stage1": stage1_results,
         "stage2": stage2_results,
+        "stage2_5": devil_advocate_result,
         "stage3": stage3_result,
         "metadata": metadata
     }
@@ -209,6 +212,24 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
+            # Stage 2.5: Devil's Advocate
+            yield f"data: {json.dumps({'type': 'stage2_5_start'})}\n\n"
+
+            stage2_5_task = asyncio.create_task(stage2_5_devil_advocate(
+                request.content,
+                stage1_results,
+                stage2_results,
+                label_to_model,
+                conversation_history
+            ))
+            while not stage2_5_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage2_5_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            devil_advocate_result = stage2_5_task.result()
+            yield f"data: {json.dumps({'type': 'stage2_5_complete', 'data': devil_advocate_result})}\n\n"
+
             # Stage 3: Synthesize final answer WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
 
@@ -217,7 +238,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 request.content,
                 stage1_results,
                 stage2_results,
-                conversation_history
+                conversation_history,
+                devil_advocate_result      # ← add this argument
             ))
             while not stage3_task.done():
                 try:
@@ -238,6 +260,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
+                devil_advocate_result,
                 stage3_result
             )
 
