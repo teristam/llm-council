@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any, Tuple
 from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, DEVIL_ADVOCATE_MODEL
 
 
 def build_conversation_context(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -288,6 +288,119 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     # Fallback: try to find any "Response X" patterns in order
     matches = re.findall(r'Response [A-Z]', ranking_text)
     return matches
+
+
+def parse_devil_advocate_response(raw: str) -> Dict[str, Any]:
+    """
+    Parse CONSENSUS: and CRITIQUE: sections from devil's advocate response.
+
+    Args:
+        raw: Full text response from the devil's advocate model
+
+    Returns:
+        Dict with consensus_identified, critique, and raw keys
+    """
+    if "CONSENSUS:" in raw and "CRITIQUE:" in raw:
+        consensus_start = raw.index("CONSENSUS:") + len("CONSENSUS:")
+        critique_start = raw.index("CRITIQUE:")
+        critique_content_start = critique_start + len("CRITIQUE:")
+
+        consensus_text = raw[consensus_start:critique_start].strip()
+        critique_text = raw[critique_content_start:].strip()
+
+        return {
+            "consensus_identified": consensus_text,
+            "critique": critique_text,
+            "raw": raw
+        }
+
+    # Fallback: sentinels not found
+    return {
+        "consensus_identified": "",
+        "critique": raw,
+        "raw": raw
+    }
+
+
+async def stage2_5_devil_advocate(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    label_to_model: Dict[str, str],
+    conversation_history: List[Dict[str, str]] = []
+) -> Dict[str, Any]:
+    """
+    Stage 2.5: Devil's Advocate identifies council consensus and argues against it.
+
+    Args:
+        user_query: The original user query
+        stage1_results: Individual model responses from Stage 1
+        stage2_results: Rankings from Stage 2
+        label_to_model: Mapping from anonymous labels to model names
+        conversation_history: Previous messages in OpenAI format (optional)
+
+    Returns:
+        Dict with model, consensus_identified, critique, and raw keys.
+        Returns None if the model call fails.
+    """
+    # Build a summary of Stage 1 responses (anonymized, consistent with Stage 2)
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    # Build a summary of Stage 2 rankings
+    rankings_text = "\n".join([
+        f"- {r['model'].split('/')[-1]}: {', '.join(r['parsed_ranking']) if r['parsed_ranking'] else 'no parsed ranking'}"
+        for r in stage2_results
+    ])
+
+    history_section = ""
+    if conversation_history:
+        history_section = f"""Conversation History:
+{format_history_for_display(conversation_history)}
+
+"""
+
+    da_prompt = f"""You are a Devil's Advocate. Your job is NOT to be helpful — it is to challenge assumptions and expose weaknesses.
+
+{history_section}Question being discussed: {user_query}
+
+RESPONSES FROM THE COUNCIL:
+{responses_text}
+
+PEER RANKINGS:
+{rankings_text}
+
+Your task:
+1. Read all the responses carefully and identify the KEY POINTS where the majority of models agreed — the consensus view.
+2. Then argue FORCEFULLY and specifically against that consensus. Find the strongest possible counterargument, the overlooked evidence, the hidden assumption, or the failure mode that everyone missed.
+
+You MUST format your response EXACTLY as follows:
+
+CONSENSUS:
+[State clearly what the majority of models agreed on — be specific, not vague]
+
+CRITIQUE:
+[Your forceful argument against that consensus — be specific, cite concrete reasons, don't hedge]"""
+
+    messages = [{"role": "user", "content": da_prompt}]
+
+    response = await query_model(DEVIL_ADVOCATE_MODEL, messages)
+
+    if response is None:
+        return None
+
+    raw = response.get('content', '')
+    parsed = parse_devil_advocate_response(raw)
+
+    return {
+        "model": DEVIL_ADVOCATE_MODEL,
+        "consensus_identified": parsed["consensus_identified"],
+        "critique": parsed["critique"],
+        "raw": raw
+    }
 
 
 def calculate_aggregate_rankings(
