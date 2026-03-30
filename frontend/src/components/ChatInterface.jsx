@@ -5,6 +5,7 @@ import Stage2 from './Stage2';
 import Stage2_5 from './Stage2_5';
 import Stage3 from './Stage3';
 import TokenBar from './TokenBar';
+import ClarificationCard from './ClarificationCard';
 import './ChatInterface.css';
 
 export default function ChatInterface({
@@ -12,6 +13,9 @@ export default function ChatInterface({
   onSendMessage,
   isLoading,
   tokenTotal,
+  pendingClarification,
+  onClarificationAnswer,
+  onClarificationSkip,
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -120,6 +124,14 @@ export default function ChatInterface({
               )}
             </div>
           ))
+        )}
+
+        {pendingClarification && (
+          <ClarificationCard
+            questions={pendingClarification.consolidatedQuestions}
+            onAnswer={onClarificationAnswer}
+            onSkip={onClarificationSkip}
+          />
         )}
 
         {isLoading && (

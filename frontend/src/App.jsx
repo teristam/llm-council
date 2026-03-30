@@ -10,6 +10,8 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [tokenTotal, setTokenTotal] = useState(null);
+  const [pendingClarification, setPendingClarification] = useState(null);
+  // Shape: { conversationId, userQuery, stage1Results, questionsByModel, consolidatedQuestions, asstMessageId }
 
   // Load conversations on mount
   useEffect(() => {
@@ -56,6 +58,113 @@ function App() {
 
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
+  };
+
+  const triggerPass2 = async ({ conversationId, userQuery, stage1Results, questionsByModel, consolidatedQuestions, userAnswer, asstMessageId = null }) => {
+    setPendingClarification(null);
+    setIsLoading(true);
+
+    const payload = {
+      user_answer: userAnswer,
+      user_query: userQuery,
+      stage1_results: stage1Results,
+      questions_by_model: questionsByModel,
+      consolidated_questions: consolidatedQuestions,
+      asst_message_id: asstMessageId,
+    };
+
+    try {
+      await api.clarifyMessageStream(conversationId, payload, (eventType, event) => {
+        switch (eventType) {
+          case 'stage1c_start':
+          case 'stage2_start':
+          case 'stage2_5_start':
+          case 'stage3_start': {
+            const stageKey = eventType.replace('_start', '').replace('stage1c', 'stage1');
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.loading = { ...lastMsg.loading, [stageKey]: true };
+              messages[messages.length - 1] = lastMsg;
+              return { ...prev, messages };
+            });
+            break;
+          }
+
+          case 'stage1c_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.stage1 = event.data;
+              lastMsg.loading = { ...lastMsg.loading, stage1: false };
+              messages[messages.length - 1] = lastMsg;
+              return { ...prev, messages };
+            });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'stage2_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.stage2 = event.data;
+              lastMsg.metadata = event.metadata;
+              lastMsg.loading = { ...lastMsg.loading, stage2: false };
+              messages[messages.length - 1] = lastMsg;
+              return { ...prev, messages };
+            });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'stage2_5_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.stage2_5 = event.data;
+              lastMsg.loading = { ...lastMsg.loading, stage2_5: false };
+              messages[messages.length - 1] = lastMsg;
+              return { ...prev, messages };
+            });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'stage3_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.stage3 = event.data;
+              lastMsg.loading = { ...lastMsg.loading, stage3: false };
+              messages[messages.length - 1] = lastMsg;
+              return { ...prev, messages };
+            });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'complete':
+            loadConversations();
+            setIsLoading(false);
+            break;
+
+          case 'error':
+            console.error('Clarify stream error:', event.message);
+            setIsLoading(false);
+            break;
+
+          case 'stream_end':
+            setIsLoading(false);
+            break;
+
+          case 'keepalive':
+            break;
+
+          default:
+            console.log('Unknown clarify event:', eventType);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to clarify:', error);
+      setIsLoading(false);
+    }
   };
 
   const handleSendMessage = async (content) => {
@@ -116,76 +225,37 @@ function App() {
             setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
-          case 'stage2_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage2 = true;
-              return { ...prev, messages };
-            });
+          case 'stage1b_start':
+            // no UI update needed
             break;
 
-          case 'stage2_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage2 = event.data;
-              lastMsg.metadata = event.metadata;
-              lastMsg.loading.stage2 = false;
-              return { ...prev, messages };
+          case 'clarification_needed':
+            setPendingClarification({
+              conversationId: currentConversationId,
+              userQuery: content,
+              stage1Results: event.stage1_results,
+              questionsByModel: event.questions_by_model,
+              consolidatedQuestions: event.questions,
+              asstMessageId: null,
             });
-            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            setIsLoading(false);
             break;
 
-          case 'stage2_5_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage2_5 = true;
-              return { ...prev, messages };
+          case 'clarification_skipped':
+            triggerPass2({
+              conversationId: currentConversationId,
+              userQuery: content,
+              stage1Results: event.stage1_results,
+              questionsByModel: event.questions_by_model,
+              consolidatedQuestions: [],
+              userAnswer: null,
+              asstMessageId: null,
             });
-            break;
-
-          case 'stage2_5_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage2_5 = event.data;
-              lastMsg.loading.stage2_5 = false;
-              return { ...prev, messages };
-            });
-            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
-            break;
-
-          case 'stage3_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage3 = true;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage3_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage3 = event.data;
-              lastMsg.loading.stage3 = false;
-              return { ...prev, messages };
-            });
-            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'title_complete':
             // Reload conversations to get updated title
             loadConversations();
-            break;
-
-          case 'complete':
-            // Stream complete, reload conversations list
-            loadConversations();
-            setIsLoading(false);
             break;
 
           case 'error':
@@ -230,6 +300,9 @@ function App() {
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
         tokenTotal={tokenTotal}
+        pendingClarification={pendingClarification}
+        onClarificationAnswer={(answer) => triggerPass2({ ...pendingClarification, userAnswer: answer })}
+        onClarificationSkip={() => triggerPass2({ ...pendingClarification, userAnswer: null })}
       />
     </div>
   );

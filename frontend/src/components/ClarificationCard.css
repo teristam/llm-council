@@ -1,0 +1,66 @@
+.clarification-card {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.clarification-card h4 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #7c6200;
+}
+
+.clarification-card ol {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.clarification-card li {
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.clarification-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 72px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  resize: vertical;
+  margin-bottom: 8px;
+}
+
+.clarification-card .card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.clarification-card .btn-answer {
+  background: #4a90e2;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.clarification-card .btn-answer:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.clarification-card .btn-skip {
+  background: none;
+  border: 1px solid #ccc;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+}
