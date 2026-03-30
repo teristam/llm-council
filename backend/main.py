@@ -59,6 +59,11 @@ class ClarifyMessageRequest(BaseModel):
     asst_message_id: Optional[str] = None
 
 
+class EditMessageRequest(BaseModel):
+    """Request to edit a user message and re-run the council as a new branch."""
+    content: str
+
+
 class ConversationMetadata(BaseModel):
     """Conversation metadata for list view."""
     id: str
@@ -315,8 +320,14 @@ async def clarify_message_stream(conversation_id: str, request: ClarifyMessageRe
                 "questions_by_model": request.questions_by_model,
             }
             if request.asst_message_id:
-                # Edit branch: handled by edit endpoint — storage will be updated there
-                pass
+                branch_data = {
+                    "stage1": stage1_results,
+                    "stage2": stage2_results,
+                    "stage2_5": devil_advocate_result,
+                    "stage3": stage3_result,
+                    "clarification": clarification,
+                }
+                storage.add_branch_to_message(conversation_id, request.asst_message_id, branch_data)
             else:
                 storage.add_assistant_message(
                     conversation_id, stage1_results, stage2_results, devil_advocate_result, stage3_result, clarification
@@ -324,6 +335,76 @@ async def clarify_message_stream(conversation_id: str, request: ClarifyMessageRe
 
             grand_total = aggregate_tokens([stage1c_tokens, stage2_tokens, stage2_5_tokens, stage3_tokens])
             yield f"data: {json.dumps({'type': 'complete', 'tokens': {'grand_total': grand_total}})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
+        }
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/messages/{message_id}/edit/stream")
+async def edit_message_stream(conversation_id: str, message_id: str, request: EditMessageRequest):
+    """
+    Edit a past user message and re-run the full council pipeline as a new branch.
+    Streams Pass 1 SSE events (stage1a + stage1b + clarification event).
+    Pass 2 is triggered by the frontend via /message/clarify/stream with asst_message_id set.
+    """
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    user_msg = storage.get_message_by_id(conversation_id, message_id)
+    if user_msg is None or user_msg["role"] != "user":
+        raise HTTPException(status_code=400, detail="Message not found or not a user message")
+
+    messages = conversation["messages"]
+    user_idx = next(i for i, m in enumerate(messages) if m.get("id") == message_id)
+    asst_msg = messages[user_idx + 1] if user_idx + 1 < len(messages) else None
+
+    prior_history = build_conversation_context(messages[:user_idx])
+
+    async def event_generator():
+        try:
+            storage.append_user_alternative(conversation_id, message_id, request.content)
+
+            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+            stage1_task = asyncio.create_task(
+                stage1_collect_responses(request.content, prior_history)
+            )
+            while not stage1_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage1_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage1_results, stage1_tokens = stage1_task.result()
+            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'tokens': stage1_tokens})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'stage1b_start'})}\n\n"
+            stage1b_task = asyncio.create_task(
+                stage1b_consolidate_questions(request.content, stage1_results)
+            )
+            while not stage1b_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage1b_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            consolidated_questions, questions_by_model, _ = stage1b_task.result()
+
+            asst_message_id = asst_msg["id"] if asst_msg else None
+
+            if consolidated_questions:
+                yield f"data: {json.dumps({'type': 'clarification_needed', 'questions': consolidated_questions, 'stage1_results': stage1_results, 'questions_by_model': questions_by_model, 'asst_message_id': asst_message_id})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'clarification_skipped', 'stage1_results': stage1_results, 'questions_by_model': questions_by_model, 'asst_message_id': asst_message_id})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
