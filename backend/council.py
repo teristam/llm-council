@@ -1,5 +1,6 @@
 """3-stage LLM Council orchestration."""
 
+import asyncio
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, DEVIL_ADVOCATE_MODEL
@@ -197,6 +198,77 @@ NONE"""
     tokens = aggregate_tokens([response.get('usage')])
 
     return consolidated, questions_by_model, tokens
+
+
+async def stage1c_revise_responses(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    consolidated_questions: List[str],
+    user_answer: str,
+    conversation_history: List[Dict[str, str]] = []
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """
+    Stage 1c: Re-query models that asked questions, appending the Q&A context.
+    Models that asked no questions keep their stage1a response unchanged.
+
+    Only called when user_answer is not None (user did not skip).
+
+    Returns:
+        (revised_stage1_results, tokens_used)
+    """
+    questions_text = "\n".join(
+        f"{i+1}. {q}" for i, q in enumerate(consolidated_questions)
+    )
+    qa_context = (
+        f"The council asked some clarifying questions:\n{questions_text}\n\n"
+        f"User's answer: {user_answer}\n\n"
+        "Please revise your response based on this additional context."
+    )
+
+    question_instructions = (
+        "\n\n---\n"
+        "After your response, list up to 3 clarifying questions that would help you give a better answer. "
+        "Use this exact format:\n\nCLARIFYING QUESTIONS:\n1. First question\n\nOr:\n\nCLARIFYING QUESTIONS:\nNONE"
+    )
+
+    models_to_revise = [r for r in stage1_results if r.get('questions')]
+
+    if not models_to_revise:
+        return stage1_results, aggregate_tokens([])
+
+    async def revise_one(result: Dict[str, Any]):
+        messages = (
+            conversation_history
+            + [{"role": "user", "content": user_query + question_instructions}]
+            + [{"role": "assistant", "content": result['response']}]
+            + [{"role": "user", "content": qa_context}]
+        )
+        response = await query_model(result['model'], messages)
+        if response is None:
+            return result, None
+        revised_text, _ = parse_questions_from_stage1(response.get('content', ''))
+        revised = {**result, "response": revised_text, "questions": []}
+        return revised, response.get('usage')
+
+    revisions = await asyncio.gather(*[revise_one(r) for r in models_to_revise])
+
+    revised_by_model = {
+        original['model']: (revised, usage)
+        for original, (revised, usage) in zip(models_to_revise, revisions)
+    }
+
+    final_results = []
+    usage_list = []
+    for result in stage1_results:
+        if result['model'] in revised_by_model:
+            revised, usage = revised_by_model[result['model']]
+            final_results.append(revised)
+            if usage:
+                usage_list.append(usage)
+        else:
+            final_results.append(result)
+
+    return final_results, aggregate_tokens(usage_list)
 
 
 async def stage2_collect_rankings(
