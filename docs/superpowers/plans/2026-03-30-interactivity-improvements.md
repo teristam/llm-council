@@ -1017,6 +1017,7 @@ Add after `SendMessageRequest`:
 class ClarifyMessageRequest(BaseModel):
     """Pass 2 request: user's answer (or None to skip) plus stage1 context from Pass 1."""
     user_answer: Optional[str]
+    user_query: str  # the original question text (needed when editing historical messages)
     stage1_results: List[Dict[str, Any]]
     questions_by_model: Dict[str, List[str]]
     consolidated_questions: List[str]
@@ -1066,7 +1067,7 @@ async def clarify_message_stream(conversation_id: str, request: ClarifyMessageRe
                 stage1_results = request.stage1_results
                 stage1c_tokens = aggregate_tokens([])
 
-            user_query = conversation["messages"][-1]["content"]
+            user_query = request.user_query
 
             # Stage 2
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
@@ -1341,9 +1342,11 @@ In `handleSendMessage`, update the SSE event switch to handle Pass 1 events and 
 case 'clarification_needed':
   setPendingClarification({
     conversationId: currentConversationId,
+    userQuery: content,  // `content` is the message text from handleSendMessage's closure
     stage1Results: event.stage1_results,
     questionsByModel: event.questions_by_model,
     consolidatedQuestions: event.questions,
+    asstMessageId: null,
   });
   setIsLoading(false);
   break;
@@ -1352,10 +1355,12 @@ case 'clarification_skipped':
   // No questions — auto-trigger Pass 2 immediately
   triggerPass2({
     conversationId: currentConversationId,
+    userQuery: content,
     stage1Results: event.stage1_results,
     questionsByModel: event.questions_by_model,
     consolidatedQuestions: [],
     userAnswer: null,
+    asstMessageId: null,
   });
   break;
 ```
@@ -1363,15 +1368,17 @@ case 'clarification_skipped':
 Add the `triggerPass2` function (defined before `handleSendMessage`):
 
 ```jsx
-const triggerPass2 = async ({ conversationId, stage1Results, questionsByModel, consolidatedQuestions, userAnswer }) => {
+const triggerPass2 = async ({ conversationId, userQuery, stage1Results, questionsByModel, consolidatedQuestions, userAnswer, asstMessageId = null }) => {
   setPendingClarification(null);
   setIsLoading(true);
 
   const payload = {
     user_answer: userAnswer,
+    user_query: userQuery,
     stage1_results: stage1Results,
     questions_by_model: questionsByModel,
     consolidated_questions: consolidatedQuestions,
+    asst_message_id: asstMessageId,
   };
 
   try {
