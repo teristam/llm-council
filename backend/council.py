@@ -377,7 +377,7 @@ async def stage2_5_devil_advocate(
 
 """
 
-    da_prompt = f"""You are a Devil's Advocate. Your job is NOT to be helpful — it is to challenge assumptions and expose weaknesses.
+    da_prompt = f"""You are a Devil's Advocate. Your role is to provide calm, reasoned scrutiny of the council's consensus — not to attack, but to surface overlooked considerations with intellectual honesty.
 
 {history_section}Question being discussed: {user_query}
 
@@ -389,7 +389,7 @@ PEER RANKINGS:
 
 Your task:
 1. Read all the responses carefully and identify the KEY POINTS where the majority of models agreed — the consensus view.
-2. Then argue FORCEFULLY and specifically against that consensus. Find the strongest possible counterargument, the overlooked evidence, the hidden assumption, or the failure mode that everyone missed.
+2. Calmly and precisely argue against that consensus. Identify the strongest counterargument, the overlooked evidence, the unexamined assumption, or the potential failure mode — and explain it with clear, measured reasoning.
 
 You MUST format your response EXACTLY as follows:
 
@@ -397,7 +397,7 @@ CONSENSUS:
 [State clearly what the majority of models agreed on — be specific, not vague]
 
 CRITIQUE:
-[Your forceful argument against that consensus — be specific, cite concrete reasons, don't hedge]"""
+[Your reasoned argument against that consensus — be specific and concrete, but measured in tone]"""
 
     messages = [{"role": "user", "content": da_prompt}]
 
