@@ -143,6 +143,11 @@ function App() {
 
           case 'complete':
             loadConversations();
+            if (conversationId) {
+              api.getConversation(conversationId).then((conv) => {
+                if (conv) setCurrentConversation(conv);
+              }).catch(() => {});
+            }
             setIsLoading(false);
             break;
 
@@ -189,6 +194,10 @@ function App() {
             break;
 
           case 'stage1_complete':
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'stage1b_complete':
             setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
@@ -276,8 +285,9 @@ function App() {
           case 'stage1_start':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage1 = true;
+              const lastMsg = { ...messages[messages.length - 1] };
+              lastMsg.loading = { ...lastMsg.loading, stage1: true };
+              messages[messages.length - 1] = lastMsg;
               return { ...prev, messages };
             });
             break;
@@ -285,9 +295,10 @@ function App() {
           case 'stage1_complete':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
+              const lastMsg = { ...messages[messages.length - 1] };
               lastMsg.stage1 = event.data;
-              lastMsg.loading.stage1 = false;
+              lastMsg.loading = { ...lastMsg.loading, stage1: false };
+              messages[messages.length - 1] = lastMsg;
               return { ...prev, messages };
             });
             setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
@@ -295,6 +306,10 @@ function App() {
 
           case 'stage1b_start':
             // no UI update needed
+            break;
+
+          case 'stage1b_complete':
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'clarification_needed':

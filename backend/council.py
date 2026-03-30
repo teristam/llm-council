@@ -275,7 +275,7 @@ async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     conversation_history: List[Dict[str, str]] = []
-) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], Dict[str, int]]:
     """
     Stage 2: Each model ranks the anonymized responses.
 
@@ -532,7 +532,7 @@ async def stage2_5_devil_advocate(
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     conversation_history: List[Dict[str, str]] = []
-) -> Optional[Dict[str, Any]]:
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, int]]:
     """
     Stage 2.5: Devil's Advocate identifies council consensus and argues against it.
 

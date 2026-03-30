@@ -172,6 +172,12 @@ export const api = {
           }
         }
       }
+      if (buffer.startsWith('data: ')) {
+        try {
+          const event = JSON.parse(buffer.slice(6));
+          onEvent(event.type, event);
+        } catch (e) { /* ignore */ }
+      }
     } catch (err) {
       onEvent('error', { message: `Stream interrupted: ${err.message}` });
     } finally {

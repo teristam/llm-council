@@ -207,7 +207,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     await asyncio.wait_for(asyncio.shield(stage1b_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            consolidated_questions, questions_by_model, _ = stage1b_task.result()
+            consolidated_questions, questions_by_model, stage1b_tokens = stage1b_task.result()
+            yield f"data: {json.dumps({'type': 'stage1b_complete', 'tokens': stage1b_tokens})}\n\n"
 
             if title_task:
                 title = await title_task
@@ -397,7 +398,8 @@ async def edit_message_stream(conversation_id: str, message_id: str, request: Ed
                     await asyncio.wait_for(asyncio.shield(stage1b_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            consolidated_questions, questions_by_model, _ = stage1b_task.result()
+            consolidated_questions, questions_by_model, stage1b_tokens = stage1b_task.result()
+            yield f"data: {json.dumps({'type': 'stage1b_complete', 'tokens': stage1b_tokens})}\n\n"
 
             asst_message_id = asst_msg["id"] if asst_msg else None
 
