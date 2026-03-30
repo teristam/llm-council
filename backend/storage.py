@@ -110,20 +110,20 @@ def list_conversations() -> List[Dict[str, Any]]:
 def add_user_message(conversation_id: str, content: str):
     """
     Add a user message to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        content: User message content
     """
+    import uuid
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
+    now = datetime.utcnow().isoformat()
     conversation["messages"].append({
+        "id": str(uuid.uuid4()),
         "role": "user",
-        "content": content
+        "content": content,
+        "alternatives": [{"content": content, "timestamp": now}],
+        "active_alternative": 0,
     })
-
     save_conversation(conversation)
 
 
@@ -138,19 +138,29 @@ def add_assistant_message(
     """
     Add an assistant message with all stages to a conversation.
     """
+    import uuid
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
+    branch_data = {
+        "stage1": stage1,
+        "stage2": stage2,
+        "stage2_5": stage2_5,
+        "stage3": stage3,
+        "clarification": clarification,
+    }
     conversation["messages"].append({
+        "id": str(uuid.uuid4()),
         "role": "assistant",
         "stage1": stage1,
         "stage2": stage2,
         "stage2_5": stage2_5,
         "stage3": stage3,
         "clarification": clarification,
+        "branches": [branch_data],
+        "active_branch": 0,
     })
-
     save_conversation(conversation)
 
 
@@ -167,4 +177,61 @@ def update_conversation_title(conversation_id: str, title: str):
         raise ValueError(f"Conversation {conversation_id} not found")
 
     conversation["title"] = title
+    save_conversation(conversation)
+
+
+def get_message_by_id(conversation_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+    """Return the message with the given id, or None if not found."""
+    conversation = get_conversation(conversation_id)
+    if conversation is None:
+        return None
+    for msg in conversation["messages"]:
+        if msg.get("id") == message_id:
+            return msg
+    return None
+
+
+def append_user_alternative(conversation_id: str, message_id: str, new_content: str):
+    """
+    Append a new alternative to a user message and set it as active.
+    Updates the top-level content field to the new content.
+    """
+    conversation = get_conversation(conversation_id)
+    if conversation is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+
+    now = datetime.utcnow().isoformat()
+    for msg in conversation["messages"]:
+        if msg.get("id") == message_id and msg["role"] == "user":
+            if "alternatives" not in msg:
+                msg["alternatives"] = [{"content": msg["content"], "timestamp": now}]
+            msg["alternatives"].append({"content": new_content, "timestamp": now})
+            msg["active_alternative"] = len(msg["alternatives"]) - 1
+            msg["content"] = new_content
+            break
+
+    save_conversation(conversation)
+
+
+def add_branch_to_message(conversation_id: str, message_id: str, branch_data: Dict[str, Any]):
+    """
+    Append a new branch to an assistant message and set it as active.
+    Updates the top-level stage fields to mirror the new active branch.
+    """
+    conversation = get_conversation(conversation_id)
+    if conversation is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+
+    for msg in conversation["messages"]:
+        if msg.get("id") == message_id and msg["role"] == "assistant":
+            if "branches" not in msg:
+                original = {k: msg.get(k) for k in ("stage1", "stage2", "stage2_5", "stage3", "clarification")}
+                msg["branches"] = [original]
+            msg["branches"].append(branch_data)
+            msg["active_branch"] = len(msg["branches"]) - 1
+            for key in ("stage1", "stage2", "stage2_5", "stage3", "clarification"):
+                if key in branch_data:
+                    msg[key] = branch_data[key]
+            break
+
     save_conversation(conversation)
