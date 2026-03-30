@@ -47,16 +47,19 @@ The stage1 result shape gains a `questions` field (list).
 
 New function `stage1b_consolidate_questions()`:
 - Collects all non-empty question lists from Stage 1a (flattening up to 3 questions per model)
-- Sends them to the chairman with a prompt to deduplicate and combine into one consolidated question
+- Sends them to the chairman with a prompt to deduplicate and consolidate — the chairman may produce **multiple distinct questions** if they cannot be meaningfully merged, or `NONE` if nothing is worth asking
 - Uses strict sentinel format:
   ```
-  CONSOLIDATED QUESTION: <combined question, or NONE>
+  CONSOLIDATED QUESTIONS:
+  1. <first consolidated question>
+  2. <second consolidated question>
+  (or NONE)
   ```
-- Returns the consolidated question string, or `null` if `NONE`
+- Returns a list of consolidated question strings (may be 1 or more), or `[]` if `NONE`
 
 Pass 1 ends here. The SSE stream emits:
-- `clarification_needed` event with the consolidated question — UI shows question + Answer/Skip UI
-- `clarification_skipped` event if no question — frontend immediately triggers Pass 2 automatically
+- `clarification_needed` event with the list of consolidated questions — UI shows all questions with a single shared textarea for the user's answer, plus a "Skip" button
+- `clarification_skipped` event if no questions — frontend immediately triggers Pass 2 automatically
 
 ### Pass 2 — `/message/clarify` Endpoint
 
@@ -85,8 +88,8 @@ The assistant message gains a `clarification` field stored alongside stage resul
 ```json
 {
   "clarification": {
-    "question": "What is your target audience?",
-    "answer": "developers",
+    "questions": ["What is your target audience?", "What is the expected scale?"],
+    "answer": "developers, small teams",
     "questions_by_model": {
       "openai/gpt-4.1": ["Who is this for?", "What is the expected scale?"],
       "google/gemini-2.5-pro": []
