@@ -27,22 +27,26 @@ All three are built on top of the existing SSE streaming pipeline with additive 
 
 ### Stage 1a — Responses + Questions
 
-The Stage 1 prompt is updated to ask each council member to optionally append a clarifying question using a strict sentinel format:
+The Stage 1 prompt is updated to ask each council member to optionally append up to 3 clarifying questions using a strict sentinel format:
 
 ```
-CLARIFYING QUESTION: <one question, or NONE>
+CLARIFYING QUESTIONS:
+1. <first question>
+2. <second question>
+3. <third question>
+(or NONE if no questions)
 ```
 
 `stage1_collect_responses()` parses this sentinel from each response, splitting into:
 - `response` — the answer (everything before the sentinel)
-- `question` — the clarifying question string, or `null` if `NONE`
+- `questions` — a list of up to 3 question strings, or `[]` if `NONE`
 
-The stage1 result shape gains a `question` field.
+The stage1 result shape gains a `questions` field (list).
 
 ### Stage 1b — Chairman Question Consolidation
 
 New function `stage1b_consolidate_questions()`:
-- Collects all non-null questions from Stage 1a
+- Collects all non-empty question lists from Stage 1a (flattening up to 3 questions per model)
 - Sends them to the chairman with a prompt to deduplicate and combine into one consolidated question
 - Uses strict sentinel format:
   ```
@@ -70,8 +74,8 @@ Runs Stage 1c → Stage 2 → Stage 2.5 → Stage 3, streaming SSE events identi
 ### Stage 1c — Revised Responses
 
 - If the user **skipped** clarification (`user_answer` is `null`), Stage 1c is skipped entirely — all Stage 1a responses are used as-is
-- If the user **answered**, council members who submitted a non-null question are re-queried with their original Stage 1a response + the Q&A appended to their message context
-- Members who had `NONE` keep their Stage 1a response unchanged in both cases
+- If the user **answered**, council members who submitted a non-empty questions list are re-queried with their original Stage 1a response + the Q&A appended to their message context
+- Members who had `NONE` (empty list) keep their Stage 1a response unchanged in both cases
 - Only 0–N models are re-queried when an answer is provided (not all), saving tokens when few models asked questions
 
 ### Storage
@@ -84,8 +88,8 @@ The assistant message gains a `clarification` field stored alongside stage resul
     "question": "What is your target audience?",
     "answer": "developers",
     "questions_by_model": {
-      "openai/gpt-4.1": "Who is this for?",
-      "google/gemini-2.5-pro": "NONE"
+      "openai/gpt-4.1": ["Who is this for?", "What is the expected scale?"],
+      "google/gemini-2.5-pro": []
     }
   }
 }
