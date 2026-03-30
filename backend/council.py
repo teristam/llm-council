@@ -144,6 +144,61 @@ async def stage1_collect_responses(
     return stage1_results, aggregate_tokens(usage_list)
 
 
+async def stage1b_consolidate_questions(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+) -> Tuple[List[str], Dict[str, List[str]], Dict[str, int]]:
+    """
+    Stage 1b: Chairman reviews all questions from council members,
+    deduplicates and consolidates into a list of distinct questions.
+
+    Returns:
+        (consolidated_questions, questions_by_model, tokens_used)
+        consolidated_questions: list of question strings (may be empty if NONE)
+        questions_by_model: {model_name: [questions]} for all models
+    """
+    questions_by_model = {r['model']: r.get('questions', []) for r in stage1_results}
+    all_questions = [q for qs in questions_by_model.values() for q in qs]
+
+    if not all_questions:
+        return [], questions_by_model, aggregate_tokens([])
+
+    questions_text = "\n".join(
+        f"- {model.split('/')[-1]}: {'; '.join(qs)}"
+        for model, qs in questions_by_model.items()
+        if qs
+    )
+
+    consolidation_prompt = f"""Multiple AI council members independently answered a user question and each submitted clarifying questions.
+
+User question: {user_query}
+
+Questions submitted by council members:
+{questions_text}
+
+Your task: consolidate these into the most important distinct questions. Remove duplicates and combine related questions. You may ask up to 5 questions.
+
+Format your response EXACTLY as:
+CONSOLIDATED QUESTIONS:
+1. First question
+2. Second question
+
+Or if none are worth asking:
+CONSOLIDATED QUESTIONS:
+NONE"""
+
+    messages = [{"role": "user", "content": consolidation_prompt}]
+    response = await query_model(CHAIRMAN_MODEL, messages)
+
+    if response is None:
+        return [], questions_by_model, aggregate_tokens([])
+
+    consolidated = parse_consolidated_questions(response.get('content', ''))
+    tokens = aggregate_tokens([response.get('usage')])
+
+    return consolidated, questions_by_model, tokens
+
+
 async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
