@@ -101,29 +101,42 @@ def format_history_for_display(conversation_history: List[Dict[str, str]]) -> st
 async def stage1_collect_responses(
     user_query: str,
     conversation_history: List[Dict[str, str]] = []
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
-    Stage 1: Collect individual responses from all council models.
-
-    Args:
-        user_query: The user's question
-        conversation_history: Previous messages in OpenAI format (optional)
+    Stage 1a: Collect individual responses from all council models.
+    Each response includes an optional list of clarifying questions (up to 3).
 
     Returns:
-        List of dicts with 'model' and 'response' keys
+        (stage1_results, tokens_used)
+        Each result has keys: model, response, questions (list of up to 3 strings)
     """
-    messages = conversation_history + [{"role": "user", "content": user_query}]
+    question_instructions = (
+        "\n\n---\n"
+        "After your response, list up to 3 clarifying questions that would help you give a better answer. "
+        "Use this exact format:\n\n"
+        "CLARIFYING QUESTIONS:\n"
+        "1. First question\n"
+        "2. Second question\n\n"
+        "Or if you have no questions:\n\n"
+        "CLARIFYING QUESTIONS:\n"
+        "NONE"
+    )
 
-    # Query all models in parallel
+    user_msg = {"role": "user", "content": user_query + question_instructions}
+    messages = conversation_history + [user_msg]
+
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
     stage1_results = []
     usage_list = []
     for model, response in responses.items():
         if response is not None:
+            raw_content = response.get('content', '')
+            response_text, questions = parse_questions_from_stage1(raw_content)
             stage1_results.append({
                 "model": model,
-                "response": response.get('content', '')
+                "response": response_text,
+                "questions": questions,
             })
             if response.get('usage'):
                 usage_list.append(response['usage'])
