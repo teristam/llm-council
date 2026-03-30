@@ -79,16 +79,18 @@ async def stage1_collect_responses(
     # Query all models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
-    # Format results
     stage1_results = []
+    usage_list = []
     for model, response in responses.items():
-        if response is not None:  # Only include successful responses
+        if response is not None:
             stage1_results.append({
                 "model": model,
                 "response": response.get('content', '')
             })
+            if response.get('usage'):
+                usage_list.append(response['usage'])
 
-    return stage1_results
+    return stage1_results, aggregate_tokens(usage_list)
 
 
 async def stage2_collect_rankings(
@@ -166,8 +168,8 @@ Now provide your evaluation and ranking:"""
     # Get rankings from all council models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
-    # Format results
     stage2_results = []
+    usage_list = []
     for model, response in responses.items():
         if response is not None:
             full_text = response.get('content', '')
@@ -177,8 +179,10 @@ Now provide your evaluation and ranking:"""
                 "ranking": full_text,
                 "parsed_ranking": parsed
             })
+            if response.get('usage'):
+                usage_list.append(response['usage'])
 
-    return stage2_results, label_to_model
+    return stage2_results, label_to_model, aggregate_tokens(usage_list)
 
 
 async def stage3_synthesize_final(
@@ -266,16 +270,16 @@ Provide a clear, well-reasoned final answer {final_answer_instruction}:"""
     response = await query_model(CHAIRMAN_MODEL, messages, reasoning={"effort": "medium"})
 
     if response is None:
-        # Fallback if chairman fails
         return {
             "model": CHAIRMAN_MODEL,
             "response": "Error: Unable to generate final synthesis."
-        }
+        }, aggregate_tokens([])
 
+    tokens = aggregate_tokens([response.get('usage')])
     return {
         "model": CHAIRMAN_MODEL,
         "response": response.get('content', '')
-    }
+    }, tokens
 
 
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
@@ -411,17 +415,18 @@ CRITIQUE:
     response = await query_model(DEVIL_ADVOCATE_MODEL, messages)
 
     if response is None:
-        return None
+        return None, aggregate_tokens([])
 
     raw = response.get('content', '')
     parsed = parse_devil_advocate_response(raw)
+    tokens = aggregate_tokens([response.get('usage')])
 
     return {
         "model": DEVIL_ADVOCATE_MODEL,
         "consensus_identified": parsed["consensus_identified"],
         "critique": parsed["critique"],
         "raw": raw
-    }
+    }, tokens
 
 
 def calculate_aggregate_rankings(
@@ -523,8 +528,7 @@ async def run_full_council(
     Returns:
         Tuple of (stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata)
     """
-    # Stage 1: Collect individual responses WITH HISTORY
-    stage1_results = await stage1_collect_responses(user_query, conversation_history)
+    stage1_results, stage1_tokens = await stage1_collect_responses(user_query, conversation_history)
 
     if not stage1_results:
         return [], [], None, {
@@ -532,36 +536,32 @@ async def run_full_council(
             "response": "All models failed to respond. Please try again."
         }, {}
 
-    # Stage 2: Collect rankings WITH HISTORY
-    stage2_results, label_to_model = await stage2_collect_rankings(
-        user_query,
-        stage1_results,
-        conversation_history
+    stage2_results, label_to_model, stage2_tokens = await stage2_collect_rankings(
+        user_query, stage1_results, conversation_history
     )
 
-    # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
-    # Stage 2.5: Devil's Advocate — identify consensus and argue against it
-    devil_advocate_result = await stage2_5_devil_advocate(
-        user_query,
-        stage1_results,
-        stage2_results,
-        conversation_history
+    devil_advocate_result, stage2_5_tokens = await stage2_5_devil_advocate(
+        user_query, stage1_results, stage2_results, conversation_history
     )
 
-    # Stage 3: Synthesize final answer WITH HISTORY and DA challenge
-    stage3_result = await stage3_synthesize_final(
-        user_query,
-        stage1_results,
-        stage2_results,
-        conversation_history,
-        devil_advocate_result
+    stage3_result, stage3_tokens = await stage3_synthesize_final(
+        user_query, stage1_results, stage2_results, conversation_history, devil_advocate_result
     )
+
+    grand_total = aggregate_tokens([stage1_tokens, stage2_tokens, stage2_5_tokens, stage3_tokens])
 
     metadata = {
         "label_to_model": label_to_model,
-        "aggregate_rankings": aggregate_rankings
+        "aggregate_rankings": aggregate_rankings,
+        "tokens": {
+            "stage1": stage1_tokens,
+            "stage2": stage2_tokens,
+            "stage2_5": stage2_5_tokens,
+            "stage3": stage3_tokens,
+            "grand_total": grand_total
+        }
     }
 
     return stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata

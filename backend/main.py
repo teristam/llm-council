@@ -21,7 +21,8 @@ from .council import (
     stage2_5_devil_advocate,
     stage3_synthesize_final,
     calculate_aggregate_rankings,
-    build_conversation_context
+    build_conversation_context,
+    aggregate_tokens,
 )
 
 app = FastAPI(title="LLM Council API")
@@ -191,8 +192,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     await asyncio.wait_for(asyncio.shield(stage1_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage1_results = stage1_task.result()
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            stage1_results, stage1_tokens = stage1_task.result()
+            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'tokens': stage1_tokens})}\n\n"
 
             # Stage 2: Collect rankings WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
@@ -208,9 +209,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     await asyncio.wait_for(asyncio.shield(stage2_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage2_results, label_to_model = stage2_task.result()
+            stage2_results, label_to_model, stage2_tokens = stage2_task.result()
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}, 'tokens': stage2_tokens})}\n\n"
 
             # Stage 2.5: Devil's Advocate
             yield f"data: {json.dumps({'type': 'stage2_5_start'})}\n\n"
@@ -226,8 +227,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     await asyncio.wait_for(asyncio.shield(stage2_5_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            devil_advocate_result = stage2_5_task.result()
-            yield f"data: {json.dumps({'type': 'stage2_5_complete', 'data': devil_advocate_result})}\n\n"
+            devil_advocate_result, stage2_5_tokens = stage2_5_task.result()
+            yield f"data: {json.dumps({'type': 'stage2_5_complete', 'data': devil_advocate_result, 'tokens': stage2_5_tokens})}\n\n"
 
             # Stage 3: Synthesize final answer WITH HISTORY
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
@@ -245,8 +246,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     await asyncio.wait_for(asyncio.shield(stage3_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage3_result = stage3_task.result()
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage3_result, stage3_tokens = stage3_task.result()
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'tokens': stage3_tokens})}\n\n"
 
             # Wait for title generation if it was started
             if title_task:
@@ -264,7 +265,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             )
 
             # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            grand_total = aggregate_tokens([stage1_tokens, stage2_tokens, stage2_5_tokens, stage3_tokens])
+            yield f"data: {json.dumps({'type': 'complete', 'tokens': {'grand_total': grand_total}})}\n\n"
 
         except Exception as e:
             # Send error event
