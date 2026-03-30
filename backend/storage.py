@@ -132,17 +132,11 @@ def add_assistant_message(
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
     stage2_5: Dict[str, Any],
-    stage3: Dict[str, Any]
+    stage3: Dict[str, Any],
+    clarification: Dict[str, Any] = None,
 ):
     """
     Add an assistant message with all stages to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        stage1: List of individual model responses
-        stage2: List of model rankings
-        stage2_5: Devil's advocate result (may be None if DA call failed)
-        stage3: Final synthesized response
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
@@ -153,7 +147,8 @@ def add_assistant_message(
         "stage1": stage1,
         "stage2": stage2,
         "stage2_5": stage2_5,
-        "stage3": stage3
+        "stage3": stage3,
+        "clarification": clarification,
     })
 
     save_conversation(conversation)
