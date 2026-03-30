@@ -12,6 +12,7 @@ function App() {
   const [tokenTotal, setTokenTotal] = useState(null);
   const [pendingClarification, setPendingClarification] = useState(null);
   // Shape: { conversationId, userQuery, stage1Results, questionsByModel, consolidatedQuestions, asstMessageId }
+  const [editingMessageId, setEditingMessageId] = useState(null);
 
   // Load conversations on mount
   useEffect(() => {
@@ -167,6 +168,73 @@ function App() {
     }
   };
 
+  const handleEditMessage = async (messageId, newContent) => {
+    setEditingMessageId(null);
+    setIsLoading(true);
+    setTokenTotal(null);
+
+    // Optimistically update the user message text in the UI
+    setCurrentConversation((prev) => {
+      const messages = prev.messages.map((m) =>
+        m.id === messageId ? { ...m, content: newContent } : m
+      );
+      return { ...prev, messages };
+    });
+
+    try {
+      await api.editMessageStream(currentConversationId, messageId, newContent, (eventType, event) => {
+        switch (eventType) {
+          case 'stage1_start':
+          case 'stage1b_start':
+            break;
+
+          case 'stage1_complete':
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
+            break;
+
+          case 'clarification_needed':
+            setPendingClarification({
+              conversationId: currentConversationId,
+              userQuery: newContent,
+              stage1Results: event.stage1_results,
+              questionsByModel: event.questions_by_model,
+              consolidatedQuestions: event.questions,
+              asstMessageId: event.asst_message_id,
+            });
+            setIsLoading(false);
+            break;
+
+          case 'clarification_skipped':
+            triggerPass2({
+              conversationId: currentConversationId,
+              userQuery: newContent,
+              stage1Results: event.stage1_results,
+              questionsByModel: event.questions_by_model,
+              consolidatedQuestions: [],
+              userAnswer: null,
+              asstMessageId: event.asst_message_id,
+            });
+            break;
+
+          case 'error':
+            console.error('Edit stream error:', event.message);
+            setIsLoading(false);
+            break;
+
+          case 'stream_end':
+            setIsLoading(false);
+            break;
+
+          case 'keepalive':
+            break;
+        }
+      });
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (content) => {
     if (!currentConversationId) return;
 
@@ -303,6 +371,10 @@ function App() {
         pendingClarification={pendingClarification}
         onClarificationAnswer={(answer) => triggerPass2({ ...pendingClarification, userAnswer: answer })}
         onClarificationSkip={() => triggerPass2({ ...pendingClarification, userAnswer: null })}
+        editingMessageId={editingMessageId}
+        onEditStart={(id, currentContent) => { setEditingMessageId(id); }}
+        onEditCancel={() => setEditingMessageId(null)}
+        onEditSubmit={handleEditMessage}
       />
     </div>
   );

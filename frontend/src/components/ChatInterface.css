@@ -161,3 +161,76 @@
   background: #ccc;
   border-color: #ccc;
 }
+
+.user-message-wrapper {
+  width: 100%;
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: #666;
+}
+
+.user-message-wrapper:hover .edit-btn {
+  opacity: 1;
+}
+
+.edit-area textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #4a90e2;
+  border-radius: 4px;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.edit-actions button {
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.edit-actions button:first-child {
+  background: #4a90e2;
+  color: white;
+  border: none;
+}
+
+.edit-actions button:first-child:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.edit-actions button:last-child {
+  background: none;
+  border: 1px solid #ccc;
+  color: #666;
+}
+
+.alt-nav,
+.branch-nav {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 4px;
+}

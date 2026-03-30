@@ -140,6 +140,45 @@ export const api = {
     }
   },
 
+  async editMessageStream(conversationId, messageId, content, onEvent) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/messages/${messageId}/edit/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      }
+    );
+    if (!response.ok) throw new Error('Failed to edit message');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              onEvent(event.type, event);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      onEvent('error', { message: `Stream interrupted: ${err.message}` });
+    } finally {
+      onEvent('stream_end', {});
+    }
+  },
+
   async clarifyMessageStream(conversationId, payload, onEvent) {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/message/clarify/stream`,

@@ -16,8 +16,13 @@ export default function ChatInterface({
   pendingClarification,
   onClarificationAnswer,
   onClarificationSkip,
+  editingMessageId,
+  onEditStart,
+  onEditCancel,
+  onEditSubmit,
 }) {
   const [input, setInput] = useState('');
+  const [editValue, setEditValue] = useState('');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -68,16 +73,70 @@ export default function ChatInterface({
             <div key={index} className="message-group">
               {msg.role === 'user' ? (
                 <div className="user-message">
-                  <div className="message-label">You</div>
-                  <div className="message-content">
-                    <div className="markdown-content">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <div className="user-message-wrapper">
+                    <div className="message-header">
+                      <span className="message-label">You</span>
+                      {!isLoading && msg.id && (
+                        <button
+                          className="edit-btn"
+                          title="Edit message"
+                          onClick={() => {
+                            setEditValue(msg.content);
+                            onEditStart(msg.id, msg.content);
+                          }}
+                        >
+                          ✏
+                        </button>
+                      )}
                     </div>
+                    {editingMessageId === msg.id ? (
+                      <div className="edit-area">
+                        <textarea
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          rows={3}
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              if (editValue.trim()) onEditSubmit(msg.id, editValue.trim());
+                            }
+                            if (e.key === 'Escape') onEditCancel();
+                          }}
+                        />
+                        <div className="edit-actions">
+                          <button
+                            onClick={() => { if (editValue.trim()) onEditSubmit(msg.id, editValue.trim()); }}
+                            disabled={!editValue.trim()}
+                          >
+                            Save
+                          </button>
+                          <button onClick={onEditCancel}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="message-content">
+                        {msg.alternatives && msg.alternatives.length > 1 && (
+                          <div className="alt-nav">
+                            {(msg.active_alternative ?? 0) + 1} / {msg.alternatives.length} edits
+                          </div>
+                        )}
+                        <div className="markdown-content">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
                 <div className="assistant-message">
                   <div className="message-label">LLM Council</div>
+
+                  {msg.branches && msg.branches.length > 1 && (
+                    <div className="branch-nav">
+                      Branch {(msg.active_branch ?? 0) + 1} / {msg.branches.length}
+                    </div>
+                  )}
 
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
