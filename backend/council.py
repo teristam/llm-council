@@ -5,6 +5,13 @@ from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, DEVIL_ADVOCATE_MODEL
 
 
+def aggregate_tokens(usages: List[Optional[Dict[str, int]]]) -> Dict[str, int]:
+    """Sum prompt and completion tokens across a list of usage dicts, skipping None."""
+    prompt = sum(u.get('prompt_tokens', 0) for u in usages if u is not None)
+    completion = sum(u.get('completion_tokens', 0) for u in usages if u is not None)
+    return {"prompt_tokens": prompt, "completion_tokens": completion, "total": prompt + completion}
+
+
 def build_conversation_context(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
     Convert stored conversation messages to LLM-compatible format.
