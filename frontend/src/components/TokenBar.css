@@ -1,0 +1,14 @@
+.token-bar {
+  width: 100%;
+  padding: 6px 16px;
+  background: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  font-size: 12px;
+  color: #888;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.token-bar .token-count {
+  font-variant-numeric: tabular-nums;
+}

@@ -4,12 +4,14 @@ import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage2_5 from './Stage2_5';
 import Stage3 from './Stage3';
+import TokenBar from './TokenBar';
 import './ChatInterface.css';
 
 export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
+  tokenTotal,
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -148,6 +150,7 @@ export default function ChatInterface({
           Send
         </button>
       </form>
+      <TokenBar totalTokens={tokenTotal} />
     </div>
   );
 }

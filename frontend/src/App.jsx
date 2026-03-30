@@ -9,6 +9,7 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [tokenTotal, setTokenTotal] = useState(null);
 
   // Load conversations on mount
   useEffect(() => {
@@ -61,6 +62,7 @@ function App() {
     if (!currentConversationId) return;
 
     setIsLoading(true);
+    setTokenTotal(null);
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
@@ -111,6 +113,7 @@ function App() {
               lastMsg.loading.stage1 = false;
               return { ...prev, messages };
             });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'stage2_start':
@@ -131,6 +134,7 @@ function App() {
               lastMsg.loading.stage2 = false;
               return { ...prev, messages };
             });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'stage2_5_start':
@@ -150,6 +154,7 @@ function App() {
               lastMsg.loading.stage2_5 = false;
               return { ...prev, messages };
             });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'stage3_start':
@@ -169,6 +174,7 @@ function App() {
               lastMsg.loading.stage3 = false;
               return { ...prev, messages };
             });
+            setTokenTotal((prev) => (prev ?? 0) + (event.tokens?.total ?? 0));
             break;
 
           case 'title_complete':
@@ -223,6 +229,7 @@ function App() {
         conversation={currentConversation}
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
+        tokenTotal={tokenTotal}
       />
     </div>
   );
