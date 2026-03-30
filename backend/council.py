@@ -12,6 +12,44 @@ def aggregate_tokens(usages: List[Optional[Dict[str, int]]]) -> Dict[str, int]:
     return {"prompt_tokens": prompt, "completion_tokens": completion, "total": prompt + completion}
 
 
+def parse_questions_from_stage1(text: str) -> Tuple[str, List[str]]:
+    """
+    Split a stage1 model response into (response_text, questions_list).
+    Extracts the CLARIFYING QUESTIONS sentinel section, caps at 3 questions.
+    """
+    import re
+    sentinel = "CLARIFYING QUESTIONS:"
+    if sentinel not in text:
+        return text.strip(), []
+
+    parts = text.split(sentinel, 1)
+    response_text = parts[0].strip()
+    questions_section = parts[1].strip()
+
+    if not questions_section or questions_section.upper().startswith("NONE"):
+        return response_text, []
+
+    matches = re.findall(r'^\d+\.\s*(.+?)\s*$', questions_section, re.MULTILINE)
+    return response_text, matches[:3]
+
+
+def parse_consolidated_questions(text: str) -> List[str]:
+    """
+    Extract consolidated questions from chairman response.
+    Returns a list of question strings, or [] if NONE.
+    """
+    import re
+    sentinel = "CONSOLIDATED QUESTIONS:"
+    if sentinel not in text:
+        return []
+
+    section = text.split(sentinel, 1)[1].strip()
+    if not section or section.upper().startswith("NONE"):
+        return []
+
+    return re.findall(r'^\d+\.\s*(.+?)\s*$', section, re.MULTILINE)
+
+
 def build_conversation_context(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """
     Convert stored conversation messages to LLM-compatible format.
