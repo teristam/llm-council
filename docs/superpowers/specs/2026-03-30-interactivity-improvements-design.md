@@ -69,9 +69,10 @@ Runs Stage 1c → Stage 2 → Stage 2.5 → Stage 3, streaming SSE events identi
 
 ### Stage 1c — Revised Responses
 
-- Council members who submitted a non-null question are re-queried with their original Stage 1a response + the Q&A appended to their message context
-- Members who had `NONE` keep their Stage 1a response unchanged
-- Only 0–N models are re-queried (not all), saving tokens when few models asked questions
+- If the user **skipped** clarification (`user_answer` is `null`), Stage 1c is skipped entirely — all Stage 1a responses are used as-is
+- If the user **answered**, council members who submitted a non-null question are re-queried with their original Stage 1a response + the Q&A appended to their message context
+- Members who had `NONE` keep their Stage 1a response unchanged in both cases
+- Only 0–N models are re-queried when an answer is provided (not all), saving tokens when few models asked questions
 
 ### Storage
 
