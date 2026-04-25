@@ -54,7 +54,7 @@ COUNCIL_MODELS = [
     "x-ai/grok-4",
 ]
 
-CHAIRMAN_MODEL = "google/gemini-3.1-pro-preview"
+CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 ```
 
 ## Running the Application

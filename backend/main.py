@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 import uuid
 import json
@@ -17,10 +17,14 @@ from .council import (
     run_full_council,
     generate_conversation_title,
     stage1_collect_responses,
+    stage1b_consolidate_questions,
+    stage1c_revise_responses,
     stage2_collect_rankings,
+    stage2_5_devil_advocate,
     stage3_synthesize_final,
     calculate_aggregate_rankings,
-    build_conversation_context
+    build_conversation_context,
+    aggregate_tokens,
 )
 
 app = FastAPI(title="LLM Council API")
@@ -42,6 +46,21 @@ class CreateConversationRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
+    content: str
+
+
+class ClarifyMessageRequest(BaseModel):
+    """Pass 2 request: user's answer plus stage1 context from Pass 1."""
+    user_answer: Optional[str]
+    user_query: str
+    stage1_results: List[Dict[str, Any]]
+    questions_by_model: Dict[str, List[str]]
+    consolidated_questions: List[str]
+    asst_message_id: Optional[str] = None
+
+
+class EditMessageRequest(BaseModel):
+    """Request to edit a user message and re-run the council as a new branch."""
     content: str
 
 
@@ -116,7 +135,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     conversation_history = build_conversation_context(conversation["messages"])
 
     # Run the 3-stage council process WITH HISTORY
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
+    stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata = await run_full_council(
         request.content,
         conversation_history
     )
@@ -126,6 +145,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
+        devil_advocate_result,
         stage3_result
     )
 
@@ -133,6 +153,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     return {
         "stage1": stage1_results,
         "stage2": stage2_results,
+        "stage2_5": devil_advocate_result,
         "stage3": stage3_result,
         "metadata": metadata
     }
@@ -156,96 +177,50 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     conversation_history = build_conversation_context(conversation["messages"])
 
     async def event_generator():
-        # Helper to run a long task while sending periodic keepalives
-        async def with_keepalive(coro):
-            """Run a coroutine while yielding keepalive events every 15 seconds."""
-            task = asyncio.create_task(coro)
-            while not task.done():
-                try:
-                    # Wait for task completion or timeout
-                    await asyncio.wait_for(asyncio.shield(task), timeout=15.0)
-                except asyncio.TimeoutError:
-                    # Task still running, yield keepalive
-                    pass
-            return task.result()
-
         try:
-            # Add user message
             storage.add_user_message(conversation_id, request.content)
 
-            # Start title generation in parallel (don't await yet)
             title_task = None
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses WITH HISTORY
+            # Stage 1a: collect responses with questions
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-
-            # Run stage 1 with keepalive heartbeats
-            stage1_task = asyncio.create_task(stage1_collect_responses(request.content, conversation_history))
+            stage1_task = asyncio.create_task(
+                stage1_collect_responses(request.content, conversation_history)
+            )
             while not stage1_task.done():
                 try:
                     await asyncio.wait_for(asyncio.shield(stage1_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage1_results = stage1_task.result()
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            stage1_results, stage1_tokens = stage1_task.result()
+            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'tokens': stage1_tokens})}\n\n"
 
-            # Stage 2: Collect rankings WITH HISTORY
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-
-            # Run stage 2 with keepalive heartbeats
-            stage2_task = asyncio.create_task(stage2_collect_rankings(
-                request.content,
-                stage1_results,
-                conversation_history
-            ))
-            while not stage2_task.done():
+            # Stage 1b: chairman consolidates questions
+            yield f"data: {json.dumps({'type': 'stage1b_start'})}\n\n"
+            stage1b_task = asyncio.create_task(
+                stage1b_consolidate_questions(request.content, stage1_results)
+            )
+            while not stage1b_task.done():
                 try:
-                    await asyncio.wait_for(asyncio.shield(stage2_task), timeout=15.0)
+                    await asyncio.wait_for(asyncio.shield(stage1b_task), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage2_results, label_to_model = stage2_task.result()
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            consolidated_questions, questions_by_model, stage1b_tokens = stage1b_task.result()
+            yield f"data: {json.dumps({'type': 'stage1b_complete', 'tokens': stage1b_tokens})}\n\n"
 
-            # Stage 3: Synthesize final answer WITH HISTORY
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-
-            # Run stage 3 with keepalive heartbeats
-            stage3_task = asyncio.create_task(stage3_synthesize_final(
-                request.content,
-                stage1_results,
-                stage2_results,
-                conversation_history
-            ))
-            while not stage3_task.done():
-                try:
-                    await asyncio.wait_for(asyncio.shield(stage3_task), timeout=15.0)
-                except asyncio.TimeoutError:
-                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-            stage3_result = stage3_task.result()
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
-
-            # Wait for title generation if it was started
             if title_task:
                 title = await title_task
                 storage.update_conversation_title(conversation_id, title)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
-            # Save complete assistant message
-            storage.add_assistant_message(
-                conversation_id,
-                stage1_results,
-                stage2_results,
-                stage3_result
-            )
-
-            # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            if consolidated_questions:
+                yield f"data: {json.dumps({'type': 'clarification_needed', 'questions': consolidated_questions, 'stage1_results': stage1_results, 'questions_by_model': questions_by_model})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'clarification_skipped', 'stage1_results': stage1_results, 'questions_by_model': questions_by_model})}\n\n"
 
         except Exception as e:
-            # Send error event
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -255,6 +230,194 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx/proxy buffering
+            "Transfer-Encoding": "chunked",
+        }
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/message/clarify/stream")
+async def clarify_message_stream(conversation_id: str, request: ClarifyMessageRequest):
+    """
+    Pass 2: continue council pipeline after clarification.
+    Accepts stage1 results from Pass 1 and the user's answer (or None if skipped).
+    """
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    conversation_history = build_conversation_context(conversation["messages"])
+
+    async def event_generator():
+        try:
+            user_query = request.user_query
+
+            # Stage 1c: revise responses (only if user answered)
+            if request.user_answer is not None:
+                yield f"data: {json.dumps({'type': 'stage1c_start'})}\n\n"
+                stage1c_task = asyncio.create_task(
+                    stage1c_revise_responses(
+                        user_query,
+                        request.stage1_results,
+                        request.consolidated_questions,
+                        request.user_answer,
+                        conversation_history,
+                    )
+                )
+                while not stage1c_task.done():
+                    try:
+                        await asyncio.wait_for(asyncio.shield(stage1c_task), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+                stage1_results, stage1c_tokens = stage1c_task.result()
+                yield f"data: {json.dumps({'type': 'stage1c_complete', 'data': stage1_results, 'tokens': stage1c_tokens})}\n\n"
+            else:
+                stage1_results = request.stage1_results
+                stage1c_tokens = aggregate_tokens([])
+
+            # Stage 2
+            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
+            stage2_task = asyncio.create_task(
+                stage2_collect_rankings(user_query, stage1_results, conversation_history)
+            )
+            while not stage2_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage2_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage2_results, label_to_model, stage2_tokens = stage2_task.result()
+            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}, 'tokens': stage2_tokens})}\n\n"
+
+            # Stage 2.5
+            yield f"data: {json.dumps({'type': 'stage2_5_start'})}\n\n"
+            stage2_5_task = asyncio.create_task(
+                stage2_5_devil_advocate(user_query, stage1_results, stage2_results, conversation_history)
+            )
+            while not stage2_5_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage2_5_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            devil_advocate_result, stage2_5_tokens = stage2_5_task.result()
+            yield f"data: {json.dumps({'type': 'stage2_5_complete', 'data': devil_advocate_result, 'tokens': stage2_5_tokens})}\n\n"
+
+            # Stage 3
+            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+            stage3_task = asyncio.create_task(
+                stage3_synthesize_final(user_query, stage1_results, stage2_results, conversation_history, devil_advocate_result)
+            )
+            while not stage3_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage3_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage3_result, stage3_tokens = stage3_task.result()
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result, 'tokens': stage3_tokens})}\n\n"
+
+            # Save assistant message
+            clarification = {
+                "questions": request.consolidated_questions,
+                "answer": request.user_answer,
+                "questions_by_model": request.questions_by_model,
+            }
+            if request.asst_message_id:
+                branch_data = {
+                    "stage1": stage1_results,
+                    "stage2": stage2_results,
+                    "stage2_5": devil_advocate_result,
+                    "stage3": stage3_result,
+                    "clarification": clarification,
+                }
+                storage.add_branch_to_message(conversation_id, request.asst_message_id, branch_data)
+            else:
+                storage.add_assistant_message(
+                    conversation_id, stage1_results, stage2_results, devil_advocate_result, stage3_result, clarification
+                )
+
+            grand_total = aggregate_tokens([stage1c_tokens, stage2_tokens, stage2_5_tokens, stage3_tokens])
+            yield f"data: {json.dumps({'type': 'complete', 'tokens': {'grand_total': grand_total}})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
+        }
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/messages/{message_id}/edit/stream")
+async def edit_message_stream(conversation_id: str, message_id: str, request: EditMessageRequest):
+    """
+    Edit a past user message and re-run the full council pipeline as a new branch.
+    Streams Pass 1 SSE events (stage1a + stage1b + clarification event).
+    Pass 2 is triggered by the frontend via /message/clarify/stream with asst_message_id set.
+    """
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    user_msg = storage.get_message_by_id(conversation_id, message_id)
+    if user_msg is None or user_msg["role"] != "user":
+        raise HTTPException(status_code=400, detail="Message not found or not a user message")
+
+    messages = conversation["messages"]
+    user_idx = next(i for i, m in enumerate(messages) if m.get("id") == message_id)
+    asst_msg = messages[user_idx + 1] if user_idx + 1 < len(messages) else None
+
+    prior_history = build_conversation_context(messages[:user_idx])
+
+    async def event_generator():
+        try:
+            storage.append_user_alternative(conversation_id, message_id, request.content)
+
+            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+            stage1_task = asyncio.create_task(
+                stage1_collect_responses(request.content, prior_history)
+            )
+            while not stage1_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage1_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            stage1_results, stage1_tokens = stage1_task.result()
+            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results, 'tokens': stage1_tokens})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'stage1b_start'})}\n\n"
+            stage1b_task = asyncio.create_task(
+                stage1b_consolidate_questions(request.content, stage1_results)
+            )
+            while not stage1b_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stage1b_task), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+            consolidated_questions, questions_by_model, stage1b_tokens = stage1b_task.result()
+            yield f"data: {json.dumps({'type': 'stage1b_complete', 'tokens': stage1b_tokens})}\n\n"
+
+            asst_message_id = asst_msg["id"] if asst_msg else None
+
+            if consolidated_questions:
+                yield f"data: {json.dumps({'type': 'clarification_needed', 'questions': consolidated_questions, 'stage1_results': stage1_results, 'questions_by_model': questions_by_model, 'asst_message_id': asst_message_id})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'clarification_skipped', 'stage1_results': stage1_results, 'questions_by_model': questions_by_model, 'asst_message_id': asst_message_id})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
             "Transfer-Encoding": "chunked",
         }
     )

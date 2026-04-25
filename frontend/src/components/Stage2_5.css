@@ -1,0 +1,42 @@
+.stage2_5 {
+  background: #fff0f0;
+  border-color: #e6c8c8;
+}
+
+.da-content {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 6px;
+  border: 1px solid #e6c8c8;
+}
+
+.da-model-label {
+  color: #8a2d2d;
+  font-size: 12px;
+  font-family: monospace;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.da-section {
+  margin-bottom: 20px;
+}
+
+.da-section:last-child {
+  margin-bottom: 0;
+}
+
+.da-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #8a2d2d;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.da-section-text {
+  color: #333;
+  line-height: 1.7;
+  font-size: 15px;
+}

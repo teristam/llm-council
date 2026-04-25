@@ -1,8 +1,54 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
+import asyncio
+from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, DEVIL_ADVOCATE_MODEL
+
+
+def aggregate_tokens(usages: List[Optional[Dict[str, int]]]) -> Dict[str, int]:
+    """Sum prompt and completion tokens across a list of usage dicts, skipping None."""
+    prompt = sum(u.get('prompt_tokens', 0) for u in usages if u is not None)
+    completion = sum(u.get('completion_tokens', 0) for u in usages if u is not None)
+    return {"prompt_tokens": prompt, "completion_tokens": completion, "total": prompt + completion}
+
+
+def parse_questions_from_stage1(text: str) -> Tuple[str, List[str]]:
+    """
+    Split a stage1 model response into (response_text, questions_list).
+    Extracts the CLARIFYING QUESTIONS sentinel section, caps at 3 questions.
+    """
+    import re
+    sentinel = "CLARIFYING QUESTIONS:"
+    if sentinel not in text:
+        return text.strip(), []
+
+    parts = text.split(sentinel, 1)
+    response_text = parts[0].strip()
+    questions_section = parts[1].strip()
+
+    if not questions_section or questions_section.upper().startswith("NONE"):
+        return response_text, []
+
+    matches = re.findall(r'^\d+\.\s*(.+?)\s*$', questions_section, re.MULTILINE)
+    return response_text, matches[:3]
+
+
+def parse_consolidated_questions(text: str) -> List[str]:
+    """
+    Extract consolidated questions from chairman response.
+    Returns a list of question strings, or [] if NONE.
+    """
+    import re
+    sentinel = "CONSOLIDATED QUESTIONS:"
+    if sentinel not in text:
+        return []
+
+    section = text.split(sentinel, 1)[1].strip()
+    if not section or section.upper().startswith("NONE"):
+        return []
+
+    return re.findall(r'^\d+\.\s*(.+?)\s*$', section, re.MULTILINE)
 
 
 def build_conversation_context(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -56,39 +102,180 @@ def format_history_for_display(conversation_history: List[Dict[str, str]]) -> st
 async def stage1_collect_responses(
     user_query: str,
     conversation_history: List[Dict[str, str]] = []
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
-    Stage 1: Collect individual responses from all council models.
-
-    Args:
-        user_query: The user's question
-        conversation_history: Previous messages in OpenAI format (optional)
+    Stage 1a: Collect individual responses from all council models.
+    Each response includes an optional list of clarifying questions (up to 3).
 
     Returns:
-        List of dicts with 'model' and 'response' keys
+        (stage1_results, tokens_used)
+        Each result has keys: model, response, questions (list of up to 3 strings)
     """
-    messages = conversation_history + [{"role": "user", "content": user_query}]
+    question_instructions = (
+        "\n\n---\n"
+        "After your response, list up to 3 clarifying questions that would help you give a better answer. "
+        "Use this exact format:\n\n"
+        "CLARIFYING QUESTIONS:\n"
+        "1. First question\n"
+        "2. Second question\n\n"
+        "Or if you have no questions:\n\n"
+        "CLARIFYING QUESTIONS:\n"
+        "NONE"
+    )
 
-    # Query all models in parallel
+    user_msg = {"role": "user", "content": user_query + question_instructions}
+    messages = conversation_history + [user_msg]
+
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
-    # Format results
     stage1_results = []
+    usage_list = []
     for model, response in responses.items():
-        if response is not None:  # Only include successful responses
+        if response is not None:
+            raw_content = response.get('content', '')
+            response_text, questions = parse_questions_from_stage1(raw_content)
             stage1_results.append({
                 "model": model,
-                "response": response.get('content', '')
+                "response": response_text,
+                "questions": questions,
             })
+            if response.get('usage'):
+                usage_list.append(response['usage'])
 
-    return stage1_results
+    return stage1_results, aggregate_tokens(usage_list)
+
+
+async def stage1b_consolidate_questions(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+) -> Tuple[List[str], Dict[str, List[str]], Dict[str, int]]:
+    """
+    Stage 1b: Chairman reviews all questions from council members,
+    deduplicates and consolidates into a list of distinct questions.
+
+    Returns:
+        (consolidated_questions, questions_by_model, tokens_used)
+        consolidated_questions: list of question strings (may be empty if NONE)
+        questions_by_model: {model_name: [questions]} for all models
+    """
+    questions_by_model = {r['model']: r.get('questions', []) for r in stage1_results}
+    all_questions = [q for qs in questions_by_model.values() for q in qs]
+
+    if not all_questions:
+        return [], questions_by_model, aggregate_tokens([])
+
+    questions_text = "\n".join(
+        f"- {model.split('/')[-1]}: {'; '.join(qs)}"
+        for model, qs in questions_by_model.items()
+        if qs
+    )
+
+    consolidation_prompt = f"""Multiple AI council members independently answered a user question and each submitted clarifying questions.
+
+User question: {user_query}
+
+Questions submitted by council members:
+{questions_text}
+
+Your task: consolidate these into the most important distinct questions. Remove duplicates and combine related questions. You may ask up to 5 questions.
+
+Format your response EXACTLY as:
+CONSOLIDATED QUESTIONS:
+1. First question
+2. Second question
+
+Or if none are worth asking:
+CONSOLIDATED QUESTIONS:
+NONE"""
+
+    messages = [{"role": "user", "content": consolidation_prompt}]
+    response = await query_model(CHAIRMAN_MODEL, messages)
+
+    if response is None:
+        return [], questions_by_model, aggregate_tokens([])
+
+    consolidated = parse_consolidated_questions(response.get('content', ''))
+    tokens = aggregate_tokens([response.get('usage')])
+
+    return consolidated, questions_by_model, tokens
+
+
+async def stage1c_revise_responses(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    consolidated_questions: List[str],
+    user_answer: str,
+    conversation_history: List[Dict[str, str]] = []
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """
+    Stage 1c: Re-query models that asked questions, appending the Q&A context.
+    Models that asked no questions keep their stage1a response unchanged.
+
+    Only called when user_answer is not None (user did not skip).
+
+    Returns:
+        (revised_stage1_results, tokens_used)
+    """
+    questions_text = "\n".join(
+        f"{i+1}. {q}" for i, q in enumerate(consolidated_questions)
+    )
+    qa_context = (
+        f"The council asked some clarifying questions:\n{questions_text}\n\n"
+        f"User's answer: {user_answer}\n\n"
+        "Please revise your response based on this additional context."
+    )
+
+    question_instructions = (
+        "\n\n---\n"
+        "After your response, list up to 3 clarifying questions that would help you give a better answer. "
+        "Use this exact format:\n\nCLARIFYING QUESTIONS:\n1. First question\n\nOr:\n\nCLARIFYING QUESTIONS:\nNONE"
+    )
+
+    models_to_revise = [r for r in stage1_results if r.get('questions')]
+
+    if not models_to_revise:
+        return stage1_results, aggregate_tokens([])
+
+    async def revise_one(result: Dict[str, Any]):
+        messages = (
+            conversation_history
+            + [{"role": "user", "content": user_query + question_instructions}]
+            + [{"role": "assistant", "content": result['response']}]
+            + [{"role": "user", "content": qa_context}]
+        )
+        response = await query_model(result['model'], messages)
+        if response is None:
+            return result, None
+        revised_text, _ = parse_questions_from_stage1(response.get('content', ''))
+        revised = {**result, "response": revised_text, "questions": []}
+        return revised, response.get('usage')
+
+    revisions = await asyncio.gather(*[revise_one(r) for r in models_to_revise])
+
+    revised_by_model = {
+        original['model']: (revised, usage)
+        for original, (revised, usage) in zip(models_to_revise, revisions)
+    }
+
+    final_results = []
+    usage_list = []
+    for result in stage1_results:
+        if result['model'] in revised_by_model:
+            revised, usage = revised_by_model[result['model']]
+            final_results.append(revised)
+            if usage:
+                usage_list.append(usage)
+        else:
+            final_results.append(result)
+
+    return final_results, aggregate_tokens(usage_list)
 
 
 async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     conversation_history: List[Dict[str, str]] = []
-) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, str], Dict[str, int]]:
     """
     Stage 2: Each model ranks the anonymized responses.
 
@@ -159,8 +346,8 @@ Now provide your evaluation and ranking:"""
     # Get rankings from all council models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
 
-    # Format results
     stage2_results = []
+    usage_list = []
     for model, response in responses.items():
         if response is not None:
             full_text = response.get('content', '')
@@ -170,15 +357,18 @@ Now provide your evaluation and ranking:"""
                 "ranking": full_text,
                 "parsed_ranking": parsed
             })
+            if response.get('usage'):
+                usage_list.append(response['usage'])
 
-    return stage2_results, label_to_model
+    return stage2_results, label_to_model, aggregate_tokens(usage_list)
 
 
 async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
-    conversation_history: List[Dict[str, str]] = []
+    conversation_history: List[Dict[str, str]] = [],
+    devil_advocate_result: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
@@ -188,6 +378,8 @@ async def stage3_synthesize_final(
         stage1_results: Individual model responses from Stage 1
         stage2_results: Rankings from Stage 2
         conversation_history: Previous messages in OpenAI format (optional)
+        devil_advocate_result: Devil's advocate challenge result (optional).
+            If provided, chairman prompt includes a section requiring direct response.
 
     Returns:
         Dict with 'model' and 'response' keys
@@ -221,6 +413,18 @@ Current Question: {user_query}"""
         question_type = "original question"
         final_answer_instruction = "that represents the council's collective wisdom"
 
+    # Build devil's advocate section if available
+    da_section = ""
+    if devil_advocate_result:
+        da_section = f"""
+DEVIL'S ADVOCATE CHALLENGE:
+Consensus identified: {devil_advocate_result.get('consensus_identified', '')}
+Challenge: {devil_advocate_result.get('critique', '')}
+
+You MUST directly address this challenge in your final answer — either rebut it with evidence,
+concede the point, or explain why it doesn't change your conclusion.
+"""
+
     chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 {question_section}
@@ -230,7 +434,7 @@ STAGE 1 - Individual Responses:
 
 STAGE 2 - Peer Rankings:
 {stage2_text}
-
+{da_section}
 Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's {question_type}. Consider:
 - The individual responses and their insights
 - The peer rankings and what they reveal about response quality
@@ -240,20 +444,20 @@ Provide a clear, well-reasoned final answer {final_answer_instruction}:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
-    # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    # Query the chairman model with medium reasoning effort
+    response = await query_model(CHAIRMAN_MODEL, messages, reasoning={"effort": "medium"})
 
     if response is None:
-        # Fallback if chairman fails
         return {
             "model": CHAIRMAN_MODEL,
             "response": "Error: Unable to generate final synthesis."
-        }
+        }, aggregate_tokens([])
 
+    tokens = aggregate_tokens([response.get('usage')])
     return {
         "model": CHAIRMAN_MODEL,
         "response": response.get('content', '')
-    }
+    }, tokens
 
 
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
@@ -288,6 +492,119 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     # Fallback: try to find any "Response X" patterns in order
     matches = re.findall(r'Response [A-Z]', ranking_text)
     return matches
+
+
+def parse_devil_advocate_response(raw: str) -> Dict[str, Any]:
+    """
+    Parse CONSENSUS: and CRITIQUE: sections from devil's advocate response.
+
+    Args:
+        raw: Full text response from the devil's advocate model
+
+    Returns:
+        Dict with consensus_identified, critique, and raw keys
+    """
+    consensus_pos = raw.find("CONSENSUS:")
+    critique_pos = raw.find("CRITIQUE:")
+    if consensus_pos != -1 and critique_pos != -1 and consensus_pos < critique_pos:
+        consensus_start = consensus_pos + len("CONSENSUS:")
+        critique_content_start = critique_pos + len("CRITIQUE:")
+
+        consensus_text = raw[consensus_start:critique_pos].strip()
+        critique_text = raw[critique_content_start:].strip()
+
+        return {
+            "consensus_identified": consensus_text,
+            "critique": critique_text,
+            "raw": raw
+        }
+
+    # Fallback: sentinels not found
+    return {
+        "consensus_identified": "",
+        "critique": raw,
+        "raw": raw
+    }
+
+
+async def stage2_5_devil_advocate(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    conversation_history: List[Dict[str, str]] = []
+) -> Tuple[Optional[Dict[str, Any]], Dict[str, int]]:
+    """
+    Stage 2.5: Devil's Advocate identifies council consensus and argues against it.
+
+    Args:
+        user_query: The original user query
+        stage1_results: Individual model responses from Stage 1
+        stage2_results: Rankings from Stage 2
+        conversation_history: Previous messages in OpenAI format (optional)
+
+    Returns:
+        Dict with model, consensus_identified, critique, and raw keys.
+        Returns None if the model call fails.
+    """
+    # Build a summary of Stage 1 responses (anonymized, consistent with Stage 2)
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    # Build a summary of Stage 2 rankings
+    rankings_text = "\n".join([
+        f"- {r['model'].split('/')[-1]}: {', '.join(r['parsed_ranking']) if r['parsed_ranking'] else 'no parsed ranking'}"
+        for r in stage2_results
+    ])
+
+    history_section = ""
+    if conversation_history:
+        history_section = f"""Conversation History:
+{format_history_for_display(conversation_history)}
+
+"""
+
+    da_prompt = f"""You are a Devil's Advocate. Your role is to provide calm, reasoned scrutiny of the council's consensus — not to attack, but to surface overlooked considerations with intellectual honesty.
+
+{history_section}Question being discussed: {user_query}
+
+RESPONSES FROM THE COUNCIL:
+{responses_text}
+
+PEER RANKINGS:
+{rankings_text}
+
+Your task:
+1. Read all the responses carefully and identify the KEY POINTS where the majority of models agreed — the consensus view.
+2. Calmly and precisely argue against that consensus. Identify the strongest counterargument, the overlooked evidence, the unexamined assumption, or the potential failure mode — and explain it with clear, measured reasoning.
+
+You MUST format your response EXACTLY as follows:
+
+CONSENSUS:
+[State clearly what the majority of models agreed on — be specific, not vague]
+
+CRITIQUE:
+[Your reasoned argument against that consensus — be specific and concrete, but measured in tone]"""
+
+    messages = [{"role": "user", "content": da_prompt}]
+
+    response = await query_model(DEVIL_ADVOCATE_MODEL, messages)
+
+    if response is None:
+        return None, aggregate_tokens([])
+
+    raw = response.get('content', '')
+    parsed = parse_devil_advocate_response(raw)
+    tokens = aggregate_tokens([response.get('usage')])
+
+    return {
+        "model": DEVIL_ADVOCATE_MODEL,
+        "consensus_identified": parsed["consensus_identified"],
+        "critique": parsed["critique"],
+        "raw": raw
+    }, tokens
 
 
 def calculate_aggregate_rankings(
@@ -378,49 +695,51 @@ Title:"""
 async def run_full_council(
     user_query: str,
     conversation_history: List[Dict[str, str]] = []
-) -> Tuple[List, List, Dict, Dict]:
+) -> Tuple[List, List, Optional[Dict], Dict, Dict]:
     """
-    Run the complete 3-stage council process with optional conversation history.
+    Run the complete council process.
 
     Args:
         user_query: The user's question
         conversation_history: Previous messages in OpenAI format (optional)
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata)
     """
-    # Stage 1: Collect individual responses WITH HISTORY
-    stage1_results = await stage1_collect_responses(user_query, conversation_history)
+    stage1_results, stage1_tokens = await stage1_collect_responses(user_query, conversation_history)
 
-    # If no models responded successfully, return error
     if not stage1_results:
-        return [], [], {
+        return [], [], None, {
             "model": "error",
             "response": "All models failed to respond. Please try again."
         }, {}
 
-    # Stage 2: Collect rankings WITH HISTORY
-    stage2_results, label_to_model = await stage2_collect_rankings(
-        user_query,
-        stage1_results,
-        conversation_history
+    stage2_results, label_to_model, stage2_tokens = await stage2_collect_rankings(
+        user_query, stage1_results, conversation_history
     )
 
-    # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
-    # Stage 3: Synthesize final answer WITH HISTORY
-    stage3_result = await stage3_synthesize_final(
-        user_query,
-        stage1_results,
-        stage2_results,
-        conversation_history
+    devil_advocate_result, stage2_5_tokens = await stage2_5_devil_advocate(
+        user_query, stage1_results, stage2_results, conversation_history
     )
 
-    # Prepare metadata
+    stage3_result, stage3_tokens = await stage3_synthesize_final(
+        user_query, stage1_results, stage2_results, conversation_history, devil_advocate_result
+    )
+
+    grand_total = aggregate_tokens([stage1_tokens, stage2_tokens, stage2_5_tokens, stage3_tokens])
+
     metadata = {
         "label_to_model": label_to_model,
-        "aggregate_rankings": aggregate_rankings
+        "aggregate_rankings": aggregate_rankings,
+        "tokens": {
+            "stage1": stage1_tokens,
+            "stage2": stage2_tokens,
+            "stage2_5": stage2_5_tokens,
+            "stage3": stage3_tokens,
+            "grand_total": grand_total
+        }
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    return stage1_results, stage2_results, devil_advocate_result, stage3_result, metadata

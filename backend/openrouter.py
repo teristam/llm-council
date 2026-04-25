@@ -8,7 +8,8 @@ from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 async def query_model(
     model: str,
     messages: List[Dict[str, str]],
-    timeout: float = 120.0
+    timeout: float = 120.0,
+    reasoning: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Query a single model via OpenRouter API.
@@ -17,6 +18,7 @@ async def query_model(
         model: OpenRouter model identifier (e.g., "openai/gpt-4o")
         messages: List of message dicts with 'role' and 'content'
         timeout: Request timeout in seconds
+        reasoning: Optional reasoning config, e.g. {"effort": "medium"}
 
     Returns:
         Response dict with 'content' and optional 'reasoning_details', or None if failed
@@ -30,6 +32,9 @@ async def query_model(
         "model": model,
         "messages": messages,
     }
+
+    if reasoning is not None:
+        payload["reasoning"] = reasoning
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -45,7 +50,11 @@ async def query_model(
 
             return {
                 'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
+                'reasoning_details': message.get('reasoning_details'),
+                'usage': {
+                    'prompt_tokens': data.get('usage', {}).get('prompt_tokens', 0),
+                    'completion_tokens': data.get('usage', {}).get('completion_tokens', 0),
+                }
             }
 
     except Exception as e:
